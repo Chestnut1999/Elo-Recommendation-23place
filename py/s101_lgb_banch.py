@@ -84,6 +84,7 @@ train = pd.concat(train_feature_list, axis=1)
 train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
+
 #========================================================================
 
 #========================================================================
@@ -97,11 +98,10 @@ oof_flg=True
 LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
 
 train, test, drop_list = LGBM.data_check(train=train, test=test, target=target)
-train = train.groupby(key).mean().reset_index()
-test = test.groupby(key).mean().reset_index()
 if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
+
 #========================================================================
 
 #========================================================================

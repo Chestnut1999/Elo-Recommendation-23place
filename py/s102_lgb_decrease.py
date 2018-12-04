@@ -91,8 +91,8 @@ folds = KFold(n_splits=fold, shuffle=True, random_state=seed)
 kfold = list(folds.split(tmp_train, y))
 
 use_cols = [col for col in train.columns if col not in ignore_list]
-valid_feat_list = use_cols.copy()
-best_valid_list = [3.795892051152665, 3.768752515103204]
+valid_feat_list = np.random.choice(use_cols, len(use_cols)))
+best_valid_list = [100, 100]
 
 valid_log_list = []
 oof_log = train[[key, target]]
@@ -112,8 +112,8 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
     oof = np.zeros(len(train))
 
     # One by One Decrease
-    if len(valid_feat)>0:
-        valid_cols = list(set(use_cols) - set([valid_feat]))
+    if i>0:
+        valid_cols = list(set(use_cols) - set([valid_feat] + decrease_list))
     else:
         valid_cols = use_cols.copy()
 
@@ -147,8 +147,10 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
     valid_log_list.append(score_list+[np.mean(score_list)])
     oof_log[f'valid{i}'] = oof
 
-    if len(valid_feat)==0:
+    if i==0:
         best_valid_list = score_list
+        #  feim = pd.Series(lgbm.feature_importance(), name='importance', index=valid_cols)
+        #  feim.sort_values(inplace=True)
         continue
 
     # move feature

@@ -3,6 +3,7 @@
 # argv[2]: valid_path
 # argv[3]: rank
 # argv[4]: session / user
+# argv[5]: session / user
 #========================================================================
 import sys
 try:
@@ -13,6 +14,8 @@ except ValueError:
     pass
 win_path = f'../features/4_winner/'
 second_path = '../features/2_second_valid/'
+gdrive_path = '../features/9_gdrive/'
+ignore_list = []
 
 import numpy as np
 import pandas as pd
@@ -26,15 +29,15 @@ import utils
 from utils import logger_func
 
 # path rename
-win_path = '../features/4_winner/*.gz'
-path_list = glob.glob(win_path)
-for path in path_list:
-    tmp = utils.read_pkl_gzip(path)
-    if path.count('107_his_train_'):
-        utils.to_pkl_gzip(path=path.replace(r'107_his_train_', '107_his_train_his_'), obj=tmp)
-    elif path.count('107_his_test_'):
-        utils.to_pkl_gzip(path=path.replace(r'107_his_test_', '107_his_test_his_'), obj=tmp)
-sys.exit()
+#  win_path = '../features/4_winner/*.gz'
+#  path_list = glob.glob(win_path)
+#  for path in path_list:
+#      tmp = utils.read_pkl_gzip(path)
+#      if path.count('107_his_train_'):
+#          utils.to_pkl_gzip(path=path.replace(r'107_his_train_', '107_his_train_his_'), obj=tmp)
+#      elif path.count('107_his_test_'):
+#          utils.to_pkl_gzip(path=path.replace(r'107_his_test_', '107_his_test_his_'), obj=tmp)
+#  sys.exit()
 
 
 def to_win_dir_Nfeatures(path='../features/1_first_valid/*.gz', N=100):
@@ -69,27 +72,23 @@ def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
             best_feature = [col for col in best_feature if col.count(sys.argv[5])]
         except IndexError:
             best_feature = [col for col in best_feature if col.count('')]
-        #  best_select = pd.read_csv('../output/use_feature/feature869_importance_auc0.806809193200456.csv')
-        #  best_feature = best_select['feature'].values
-        #  best_feature = best_select.query("rank>=750")['feature'].values
-        #  best_feature = best_select.query("rank>=1047")['feature'].values
-        #  best_feature = [col for col in best_feature if col.count('max') or col.count('min') or col.count('sum')]
-        #  best_feature = [col for col in best_feature if col.count('impute')]
 
         if len(best_feature)==0:
             sys.exit()
+
+        path_list = glob.glob('../features/4_winner/*')
         for feature in best_feature:
-            if feature not in ignore_list:
+            move_path = [path for path in path_list if path.count(feature) and feature not in ignore_list]
+            for move in move_path:
                 try:
-                    shutil.move(f"{win_path}train_{feature}.gz", second_path)
-                    shutil.move(f"{win_path}test_{feature}.gz", second_path)
-                    #  shutil.move(f'../features/go_dima/{feature}.npy', '../features/1_second_valid/')
+                    shutil.move(move, second_path)
                 except FileNotFoundError:
                     print(f'FileNotFound. : {feature}.gz')
                     pass
                 except shutil.Error:
                     logger.info(f'Shutil Error: {feature}')
         print(f'move to third_valid:{len(best_feature)}')
+
 
 def move_to_use():
 
@@ -98,51 +97,29 @@ def move_to_use():
     except IndexError:
         path = ''
     best_select = pd.read_csv(path)
-    tmp_best_feature = best_select['feature'].values
-    best_feature = []
-    for feat in tmp_best_feature:
-        best_feature.append('train_'+feat)
-        best_feature.append('test_'+feat)
+    best_feature = best_select['feature'].values
 
-    win_list = glob.glob(win_path + '*.gz')
-    for path in win_list:
-        filename = re.search(r'/([^/.]*).gz', path).group(1)
-        if filename  in ignore_list: continue
-        try:
-            shutil.move(path, tmp_win_path)
-        except shutil.Error:
-            shutil.move(path, delete_train_path)
-
-    if sys.argv[4]=='one':
-        first_list = glob.glob('../features/1_first_valid/*.gz')
-        second_list = glob.glob('../features/2_second_valid/*.gz')
-        third_list = glob.glob('../features/3_third_valid/*.gz')
-        tmp_list = glob.glob('../features/5_tmp/*.gz')
-        path_list = first_list + second_list + third_list + tmp_list
-    elif sys.argv[4]=='two':
-        path_list = glob.glob(tmp_win_path + '*.gz')
-    else :
-        first_list = glob.glob('../features/1_first_valid/*.gz')
-        second_list = glob.glob('../features/2_second_valid/*.gz')
-        third_list = glob.glob('../features/3_third_valid/*.gz')
-        tmp_list = glob.glob('../features/5_tmp/*.gz')
-        path_list = first_list + second_list + third_list + tmp_list
+    win_list = glob.glob(win_path + '*')
+    first_list = glob.glob('../features/1_first_valid/*')
+    second_list = glob.glob('../features/2_second_valid/*')
+    third_list = glob.glob('../features/3_third_valid/*')
+    tmp_list = glob.glob('../features/5_tmp/*')
+    path_list = first_list + second_list + third_list + tmp_list + win_list
 
     done_list = []
-    for path in path_list:
+    for feature in best_feature:
+        for path in path_list:
 
-        try:
-            filename = re.search(r'/([^/.]*).gz', path).group(1)
-        except AttributeError:
-            print(f"AttributeError: \nPathName: {path}")
-            sys.exit()
-        #  if filename[5:] in best_feature or filename[6:] in best_feature:
-        if filename in best_feature:
-            try:
-                shutil.move(path, win_path)
-                done_list.append(filename)
-            except shutil.Error:
-                shutil.move(path, delete_train_path)
+            if path.count(feature):
+                try:
+                    shutil.move(path, win_path)
+                    done_list.append(path)
+                except shutil.Error:
+                    pass
+                    #  shutil.move(path, gdrive_path)
+                except FileNotFoundError:
+                    pass
+                    #  shutil.move(path, gdrive_path)
 
     logger = logger_func()
     loss_list = set(list(best_feature)) - set(done_list)
