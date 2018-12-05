@@ -3,7 +3,6 @@
 # argv[2]: valid_path
 # argv[3]: rank
 # argv[4]: session / user
-# argv[5]: session / user
 #========================================================================
 import sys
 try:
@@ -69,7 +68,7 @@ def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
             pass
         best_feature = best_select.query(f"rank>={rank}")['feature'].values
         try:
-            best_feature = [col for col in best_feature if col.count(sys.argv[5])]
+            best_feature = [col for col in best_feature if col.count(sys.argv[4])]
         except IndexError:
             best_feature = [col for col in best_feature if col.count('')]
 
@@ -78,7 +77,7 @@ def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
 
         path_list = glob.glob('../features/4_winner/*')
         for feature in best_feature:
-            move_path = [path for path in path_list if path.count(feature) and feature not in ignore_list]
+            move_path = [path for path in path_list if path.count(feature[8:]) and feature not in ignore_list]
             for move in move_path:
                 try:
                     shutil.move(move, second_path)

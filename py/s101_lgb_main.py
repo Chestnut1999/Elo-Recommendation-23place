@@ -85,6 +85,13 @@ train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
+train_id = train[key].values
+test_id = test[key].values
+
+#  outlier_pred = utils.read_pkl_gzip('../stack/1204_211_outlier_classify_lgb_auc0-8952469653357074_227features.gz').set_index(key)
+#  train['outlier_pred@'] = outlier_pred.loc[train_id, 'prediction'].values
+#  test['outlier_pred@'] = outlier_pred.loc[test_id, 'prediction'].values
+
 #========================================================================
 
 #========================================================================
@@ -135,7 +142,7 @@ cv_feim.to_csv(f'../valid/{start_time[4:12]}_{model_type}_{fname}_feat{feature_n
 # STACKING
 if len(stack_name)>0:
     logger.info(f'result_stack shape: {LGBM.result_stack.shape}')
-    utils.to_pkl(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features.fp", obj=LGBM.result_stack)
+    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=LGBM.result_stack)
 logger.info(f'FEATURE IMPORTANCE PATH: {HOME}/kaggle/home-credit-default-risk/output/cv_feature{feature_num}_importances_{metric}_{cv_score}.csv')
 #========================================================================
 

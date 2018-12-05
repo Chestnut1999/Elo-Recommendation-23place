@@ -91,7 +91,7 @@ folds = KFold(n_splits=fold, shuffle=True, random_state=seed)
 kfold = list(folds.split(tmp_train, y))
 
 use_cols = [col for col in train.columns if col not in ignore_list]
-valid_feat_list = np.random.choice(use_cols, len(use_cols)))
+valid_feat_list = list(np.random.choice(use_cols, len(use_cols)))
 best_valid_list = [100, 100]
 
 valid_log_list = []
