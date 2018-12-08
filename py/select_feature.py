@@ -77,7 +77,7 @@ def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
 
         path_list = glob.glob('../features/4_winner/*')
         for feature in best_feature:
-            move_path = [path for path in path_list if path.count(feature[8:]) and feature not in ignore_list]
+            move_path = [path for path in path_list if path.count(feature[:7]) and path.count(feature[9:]) and feature not in ignore_list]
             for move in move_path:
                 try:
                     shutil.move(move, second_path)
@@ -109,7 +109,7 @@ def move_to_use():
     for feature in best_feature:
         for path in path_list:
 
-            if path.count(feature):
+            if path.count(feature[:7]) and path.count(feature[9:]):
                 try:
                     shutil.move(path, win_path)
                     done_list.append(path)
