@@ -58,7 +58,7 @@ except NameError:
     logger=logger_func()
 
 if model_type=='lgb':
-    params = params_elo()
+    params = params_elo()[0]
     params['learning_rate'] = learning_rate
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
@@ -96,9 +96,10 @@ test_id = test[key].values
 
 #========================================================================
 # LGBM Setting
+seed=1208
 metric = 'rmse'
 fold=5
-fold_type='kfold'
+fold_type='self'
 group_col_name=''
 dummie=1
 oof_flg=True
@@ -109,6 +110,11 @@ if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
 
+from sklearn.model_selection import StratifiedKFold
+train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+kfold = folds.split(train,train['outliers'].values)
+train.drop('outliers', axis=1, inplace=True)
 #========================================================================
 
 #========================================================================
@@ -126,6 +132,7 @@ LGBM = LGBM.cross_prediction(
     ,num_boost_round=num_boost_round
     ,early_stopping_rounds=early_stopping_rounds
     ,oof_flg=oof_flg
+    ,self_kfold=kfold
 )
 
 #========================================================================
