@@ -43,7 +43,7 @@ HOME = os.path.expanduser('~')
 
 sys.path.append(f'{HOME}/kaggle/data_analysis/model')
 from params_lgbm import params_elo
-from xray_wrapper import Xray_Cal
+from pdp import Xray_Cal
 sys.path.append(f'{HOME}/kaggle/data_analysis')
 from model.lightgbm_ex import lightgbm_ex as lgb_ex
 
@@ -58,7 +58,7 @@ except NameError:
     logger=logger_func()
 
 if model_type=='lgb':
-    params = params_elo()[0]
+    params = params_elo()[1]
     params['learning_rate'] = learning_rate
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
@@ -78,8 +78,8 @@ for path in win_path_list:
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
-train_feature_list = utils.pararell_load_data(path_list=train_path_list)
-test_feature_list = utils.pararell_load_data(path_list=test_path_list)
+train_feature_list = utils.parallel_load_data(path_list=train_path_list)
+test_feature_list = utils.parallel_load_data(path_list=test_path_list)
 train = pd.concat(train_feature_list, axis=1)
 train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
@@ -99,6 +99,7 @@ test_id = test[key].values
 seed=1208
 metric = 'rmse'
 fold=5
+fold_type='kfold'
 fold_type='self'
 group_col_name=''
 dummie=1
@@ -110,11 +111,18 @@ if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
 
+
+# Outlierの除外
+train = train.loc[train[target]>-30, :]
+train.loc[train[target]>=9, :][target] = 9
+train.loc[train[target]<=-9, :][target] = -9
+
 from sklearn.model_selection import StratifiedKFold
-train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+train['outliers'] = train[target].map(lambda x: 1 if np.abs(x)>3 else 0)
 folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
 kfold = folds.split(train,train['outliers'].values)
 train.drop('outliers', axis=1, inplace=True)
+
 #========================================================================
 
 #========================================================================
@@ -157,9 +165,13 @@ logger.info(f'FEATURE IMPORTANCE PATH: {HOME}/kaggle/home-credit-default-risk/ou
 # Submission
 if len(submit)>0:
     submit[target] = test_pred
-    submit.to_csv(f'../submit/{start_time[4:12]}_submit_{model_type}_rate{learning_rate}_{feature_num}features_CV{cv_score}_LB.csv', index=False)
+    outlier_pred = '1213_kernel_LB3699_submission.csv'
+    thres = -3
+    clf_pred = pd.read_csv(f'../log_submit/{outlier_pred}')
+    #  submit.loc[clf_pred.target>=0.1, target] = -10
+    submit.loc[clf_pred.target<=thres, target] = clf_pred.loc[clf_pred.target<=thres, target]
+    submit.to_csv(f'../submit/{start_time[4:12]}_submit_{model_type}_rate{learning_rate}_{feature_num}features_CV{cv_score}_OL{outlier_pred[:-4]}_thres{thres}_LB.csv', index=False)
 #========================================================================
-
 
 #========================================================================
 # X-RAYの計算と出力
@@ -180,7 +192,7 @@ if xray:
         model = LGBM.fold_model_list[fold_num]
         if fold_num==0:
             xray_obj = Xray_Cal(logger=logger, ignore_list=ignore_list, model=model)
-        xray_obj, tmp_xray = xray_obj.get_xray(base_xray=train, col_list=train.columns, fold_num=fold_num, N_sample=N_sample, max_point=max_point, Pararell=True)
+        xray_obj, tmp_xray = xray_obj.get_xray(base_xray=train, col_list=train.columns, fold_num=fold_num, N_sample=N_sample, max_point=max_point, parallel=True)
         tmp_xray.rename(columns={'xray':f'xray_{fold_num}'}, inplace=True)
 
         if len(result_xray):

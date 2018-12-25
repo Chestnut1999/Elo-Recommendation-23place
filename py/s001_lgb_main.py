@@ -1,4 +1,3 @@
-import gc
 import sys
 import pandas as pd
 #========================================================================
@@ -9,7 +8,7 @@ target = 'target'
 ignore_list = [key, target, 'merchant_id']
 
 win_path = f'../features/4_winner/*.gz'
-stack_name='outlier_classify'
+stack_name='en_route'
 fname=''
 xray=False
 #  xray=True
@@ -29,11 +28,11 @@ except IndexError:
 try:
     learning_rate = float(sys.argv[2])
 except IndexError:
-    learning_rate = 0.005
+    learning_rate = 0.1
 try:
     early_stopping_rounds = int(sys.argv[3])
 except IndexError:
-    early_stopping_rounds = 200
+    early_stopping_rounds = 100
 num_boost_round = 10000
 
 import numpy as np
@@ -86,15 +85,21 @@ train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
+train_id = train[key].values
+test_id = test[key].values
+
+#  outlier_pred = utils.read_pkl_gzip('../stack/1204_211_outlier_classify_lgb_auc0-8952469653357074_227features.gz').set_index(key)
+#  train['outlier_pred@'] = outlier_pred.loc[train_id, 'prediction'].values
+#  test['outlier_pred@'] = outlier_pred.loc[test_id, 'prediction'].values
+
 #========================================================================
 
 #========================================================================
 # LGBM Setting
-params['objective'] = 'binary'
-train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
-metric = 'auc'
+seed=1208
+metric = 'rmse'
 fold=5
-fold_type='kfold'
+fold_type='self'
 group_col_name=''
 dummie=1
 oof_flg=True
@@ -105,6 +110,11 @@ if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
 
+from sklearn.model_selection import StratifiedKFold
+train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+kfold = folds.split(train,train['outliers'].values)
+train.drop('outliers', axis=1, inplace=True)
 #========================================================================
 
 #========================================================================
@@ -122,6 +132,7 @@ LGBM = LGBM.cross_prediction(
     ,num_boost_round=num_boost_round
     ,early_stopping_rounds=early_stopping_rounds
     ,oof_flg=oof_flg
+    ,self_kfold=kfold
 )
 
 #========================================================================
@@ -138,7 +149,7 @@ cv_feim.to_csv(f'../valid/{start_time[4:12]}_{model_type}_{fname}_feat{feature_n
 # STACKING
 if len(stack_name)>0:
     logger.info(f'result_stack shape: {LGBM.result_stack.shape}')
-    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_{metric}{str(cv_score).replace('.', '-')}_{feature_num}features", obj=LGBM.result_stack)
+    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=LGBM.result_stack)
 logger.info(f'FEATURE IMPORTANCE PATH: {HOME}/kaggle/home-credit-default-risk/output/cv_feature{feature_num}_importances_{metric}_{cv_score}.csv')
 #========================================================================
 
@@ -148,6 +159,7 @@ if len(submit)>0:
     submit[target] = test_pred
     submit.to_csv(f'../submit/{start_time[4:12]}_submit_{model_type}_rate{learning_rate}_{feature_num}features_CV{cv_score}_LB.csv', index=False)
 #========================================================================
+
 
 #========================================================================
 # X-RAYの計算と出力
@@ -162,14 +174,13 @@ if xray:
     train.reset_index(inplace=True)
     train = train[LGBM.use_cols]
     result_xray = pd.DataFrame()
-    N_sample = 200000
-    max_point = 20
-    fold = 3
+    N_sample = 500000
+    max_point = 30
     for fold_num in range(fold):
+        model = LGBM.fold_model_list[fold_num]
         if fold_num==0:
-            xray_obj = Xray_Cal(logger=logger, ignore_list=ignore_list)
-        xray_obj.model = LGBM.fold_model_list[fold_num]
-        xray_obj, tmp_xray = xray_obj.get_xray(base_xray=train, col_list=train.columns, fold_num=fold_num, N_sample=N_sample, max_point=max_point, parallel=False)
+            xray_obj = Xray_Cal(logger=logger, ignore_list=ignore_list, model=model)
+        xray_obj, tmp_xray = xray_obj.get_xray(base_xray=train, col_list=train.columns, fold_num=fold_num, N_sample=N_sample, max_point=max_point, parallel=True)
         tmp_xray.rename(columns={'xray':f'xray_{fold_num}'}, inplace=True)
 
         if len(result_xray):
