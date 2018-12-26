@@ -18,7 +18,11 @@ pd.set_option('max_rows', 200)
 
 def main():
     submit = sys.argv[1]
-    utils.submit(file_path=submit)
+    try:
+        comment = sys.argv[2]
+        utils.submit(file_path=submit, comment=comment)
+    except IndexError:
+        utils.submit(file_path=submit)
 
     shutil.move(submit, '../log_submit/')
 
