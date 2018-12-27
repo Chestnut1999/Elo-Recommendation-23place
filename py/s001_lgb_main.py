@@ -96,7 +96,12 @@ test_id = test[key].values
 
 #========================================================================
 # LGBM Setting
-seed=1208
+try:
+    sys.argv[4]
+    #  seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005]
+    seed_list = np.arange(100)
+except IndexError:
+    seed_list = [1208]
 metric = 'rmse'
 fold=5
 fold_type='self'
@@ -111,45 +116,63 @@ if len(drop_list):
     test.drop(drop_list, axis=1, inplace=True)
 
 from sklearn.model_selection import StratifiedKFold
-train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-kfold = folds.split(train,train['outliers'].values)
-train.drop('outliers', axis=1, inplace=True)
-#========================================================================
 
-#========================================================================
-# Train & Prediction Start
-#========================================================================
-LGBM = LGBM.cross_prediction(
-    train=train
-    ,test=test
-    ,key=key
-    ,target=target
-    ,fold_type=fold_type
-    ,fold=fold
-    ,group_col_name=group_col_name
-    ,params=params
-    ,num_boost_round=num_boost_round
-    ,early_stopping_rounds=early_stopping_rounds
-    ,oof_flg=oof_flg
-    ,self_kfold=kfold
-)
+# seed_avg
+seed_pred = np.zeros(len(test))
+for i, seed in enumerate(seed_list):
+
+    LGBM.seed = seed
+
+    train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    kfold = folds.split(train,train['outliers'].values)
+    if i==0:
+        train.drop('outliers', axis=1, inplace=True)
+    #========================================================================
+
+    #========================================================================
+    # Train & Prediction Start
+    #========================================================================
+    LGBM = LGBM.cross_prediction(
+        train=train
+        ,test=test
+        ,key=key
+        ,target=target
+        ,fold_type=fold_type
+        ,fold=fold
+        ,group_col_name=group_col_name
+        ,params=params
+        ,num_boost_round=num_boost_round
+        ,early_stopping_rounds=early_stopping_rounds
+        ,oof_flg=oof_flg
+        ,self_kfold=kfold
+    )
+
+    seed_pred += LGBM.prediction
+
+    if i==0:
+        cv_score = LGBM.cv_score
+        cv_feim = LGBM.cv_feim
+        feature_num = len(LGBM.use_cols)
+        df_pred = LGBM.result_stack.copy()
+    else:
+        df_pred.merge(LGBM.result_stack.rename(columns={'prediction', f'prediction_{i}'}), how='inner', on=key)
 
 #========================================================================
 # Result
 #========================================================================
-cv_score = LGBM.cv_score
-test_pred = LGBM.prediction
-cv_feim = LGBM.cv_feim
-feature_num = len(LGBM.use_cols)
+test_pred = seed_pred / len(seed_list)
 
 cv_feim.to_csv(f'../valid/{start_time[4:12]}_{model_type}_{fname}_feat{feature_num}_CV{cv_score}_lr{learning_rate}.csv', index=False)
 
 #========================================================================
 # STACKING
 if len(stack_name)>0:
-    logger.info(f'result_stack shape: {LGBM.result_stack.shape}')
-    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=LGBM.result_stack)
+    logger.info(f'result_stack shape: {df_pred.shape}')
+    if len(seed_list)==1:
+        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
+    else:
+        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{len(seed_list)}seed_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
 logger.info(f'FEATURE IMPORTANCE PATH: {HOME}/kaggle/home-credit-default-risk/output/cv_feature{feature_num}_importances_{metric}_{cv_score}.csv')
 #========================================================================
 
