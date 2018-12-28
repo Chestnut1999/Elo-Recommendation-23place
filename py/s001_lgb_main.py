@@ -99,7 +99,7 @@ test_id = test[key].values
 try:
     sys.argv[4]
     #  seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005]
-    seed_list = np.arange(100)
+    seed_list = np.arange(500)
 except IndexError:
     seed_list = [1208]
 metric = 'rmse'
@@ -121,13 +121,13 @@ from sklearn.model_selection import StratifiedKFold
 seed_pred = np.zeros(len(test))
 for i, seed in enumerate(seed_list):
 
+    LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
 
     train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
     kfold = folds.split(train,train['outliers'].values)
-    if i==0:
-        train.drop('outliers', axis=1, inplace=True)
+    train.drop('outliers', axis=1, inplace=True)
     #========================================================================
 
     #========================================================================
@@ -156,7 +156,7 @@ for i, seed in enumerate(seed_list):
         feature_num = len(LGBM.use_cols)
         df_pred = LGBM.result_stack.copy()
     else:
-        df_pred.merge(LGBM.result_stack.rename(columns={'prediction', f'prediction_{i}'}), how='inner', on=key)
+        df_pred = df_pred.merge(LGBM.result_stack.rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
 
 #========================================================================
 # Result
@@ -180,7 +180,7 @@ logger.info(f'FEATURE IMPORTANCE PATH: {HOME}/kaggle/home-credit-default-risk/ou
 # Submission
 if len(submit)>0:
     submit[target] = test_pred
-    submit.to_csv(f'../submit/{start_time[4:12]}_submit_{model_type}_rate{learning_rate}_{feature_num}features_CV{cv_score}_LB.csv', index=False)
+    submit.to_csv(f'../submit/{start_time[4:12]}_submit_{model_type}_rate{learning_rate}_{feature_num}features_{len(seed_list)}seed_CV{cv_score}_LB.csv', index=False)
 #========================================================================
 
 

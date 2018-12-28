@@ -1,10 +1,6 @@
 #!/bin/bash
 
-for i in `seq 1 2000`
-do
-    echo $i
-    python s104_lgb_ensemble.py lgb 0.05 $i
-done
+python s001_lgb_main.py lgb 0.01 200 go
 
-# wait
-# sudo shutdown -P
+wait
+sudo shutdown -P
