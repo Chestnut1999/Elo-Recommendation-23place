@@ -1,5 +1,6 @@
 import sys
 import pandas as pd
+
 #========================================================================
 # Args
 #========================================================================
@@ -38,6 +39,7 @@ num_boost_round = 10000
 import numpy as np
 import datetime
 import glob
+import gc
 import os
 HOME = os.path.expanduser('~')
 
@@ -88,18 +90,13 @@ test = pd.concat([base_test, test], axis=1)
 train_id = train[key].values
 test_id = test[key].values
 
-#  outlier_pred = utils.read_pkl_gzip('../stack/1204_211_outlier_classify_lgb_auc0-8952469653357074_227features.gz').set_index(key)
-#  train['outlier_pred@'] = outlier_pred.loc[train_id, 'prediction'].values
-#  test['outlier_pred@'] = outlier_pred.loc[test_id, 'prediction'].values
-
 #========================================================================
 
 #========================================================================
 # LGBM Setting
 try:
-    sys.argv[4]
-    #  seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005]
-    seed_list = np.arange(500)
+    seed_list = np.arange(int(sys.argv[4]))
+    seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005]
 except IndexError:
     seed_list = [1208]
 metric = 'rmse'
@@ -194,16 +191,22 @@ if len(submit)>0:
 #                計算時間を考えると最大30カラム程度を推奨。
 #========================================================================
 if xray:
+    # Squeeze card_id
+    id_list = pd.read_csv('../output/1229_elo_id_list_std001_max-5.csv')[key].values
+    train.reset_index(inplace=True)
+    train = train.loc[train[key].isin(id_list), :]
+    # ===
+
     train.reset_index(inplace=True)
     train = train[LGBM.use_cols]
     result_xray = pd.DataFrame()
     N_sample = 500000
     max_point = 30
     for fold_num in range(fold):
-        model = LGBM.fold_model_list[fold_num]
         if fold_num==0:
-            xray_obj = Xray_Cal(logger=logger, ignore_list=ignore_list, model=model)
-        xray_obj, tmp_xray = xray_obj.get_xray(base_xray=train, col_list=train.columns, fold_num=fold_num, N_sample=N_sample, max_point=max_point, parallel=True)
+            xray_obj = Xray_Cal(logger=logger, ignore_list=ignore_list)
+        xray_obj.model = LGBM.fold_model_list[fold_num]
+        xray_obj, tmp_xray = xray_obj.get_xray(base_xray=train, col_list=train.columns, fold_num=fold_num, N_sample=N_sample, max_point=max_point, parallel=False)
         tmp_xray.rename(columns={'xray':f'xray_{fold_num}'}, inplace=True)
 
         if len(result_xray):
