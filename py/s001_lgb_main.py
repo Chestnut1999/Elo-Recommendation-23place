@@ -70,6 +70,10 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path)
+# tmp_path_listには検証中のfeatureを入れてある
+tmp_path_list = glob.glob('../features/5_tmp/*.gz')
+win_path_list += tmp_path_list
+
 train_path_list = []
 test_path_list = []
 for path in win_path_list:
@@ -116,6 +120,7 @@ from sklearn.model_selection import StratifiedKFold
 
 # seed_avg
 seed_pred = np.zeros(len(test))
+cv_list = []
 for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
@@ -148,17 +153,22 @@ for i, seed in enumerate(seed_list):
     seed_pred += LGBM.prediction
 
     if i==0:
-        cv_score = LGBM.cv_score
+        cv_list.append(LGBM.cv_score)
         cv_feim = LGBM.cv_feim
         feature_num = len(LGBM.use_cols)
         df_pred = LGBM.result_stack.copy()
     else:
+        cv_score = LGBM.cv_score
+        cv_list.append(cv_score)
+        LGBM.cv_feim.columns = [col if col.count('feature') else f"{col}_{seed}" for col in LGBM.cv_feim.columns]
+        cv_feim = cv_feim.merge(LGBM.cv_feim, how='inner', on='feature')
         df_pred = df_pred.merge(LGBM.result_stack.rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
 
 #========================================================================
 # Result
 #========================================================================
 test_pred = seed_pred / len(seed_list)
+cv_score = np.mean(cv_list)
 
 cv_feim.to_csv(f'../valid/{start_time[4:12]}_{model_type}_{fname}_feat{feature_num}_CV{cv_score}_lr{learning_rate}.csv', index=False)
 
