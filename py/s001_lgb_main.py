@@ -6,7 +6,7 @@ import pandas as pd
 #========================================================================
 key = 'card_id'
 target = 'target'
-ignore_list = [key, target, 'merchant_id']
+ignore_list = [key, target, 'merchant_id', 'weight']
 
 win_path = f'../features/4_winner/*.gz'
 stack_name='en_route'
@@ -34,7 +34,7 @@ try:
     early_stopping_rounds = int(sys.argv[3])
 except IndexError:
     early_stopping_rounds = 100
-num_boost_round = 10000
+num_boost_round = 30000
 
 import numpy as np
 import datetime
@@ -62,6 +62,9 @@ except NameError:
 if model_type=='lgb':
     params = params_elo()[1]
     params['learning_rate'] = learning_rate
+#  params['subsample'] = 0.7
+#  params['lambda_l1'] = 0.0
+#  params['colsample_bytree'] = 0.4
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -129,12 +132,15 @@ for i, seed in enumerate(seed_list):
     train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
     kfold = folds.split(train,train['outliers'].values)
-    train.drop('outliers', axis=1, inplace=True)
-    #========================================================================
 
-    #========================================================================
-    # Train & Prediction Start
-    #========================================================================
+    #  train['weight'] = train['outliers']*-0.2 + 1.0
+    #  params['weight'] = 'weight'
+    train.drop('outliers', axis=1, inplace=True)
+#========================================================================
+
+#========================================================================
+# Train & Prediction Start
+#========================================================================
     LGBM = LGBM.cross_prediction(
         train=train
         ,test=test
@@ -148,6 +154,7 @@ for i, seed in enumerate(seed_list):
         ,early_stopping_rounds=early_stopping_rounds
         ,oof_flg=oof_flg
         ,self_kfold=kfold
+        #  ,comp_name='elo'
     )
 
     seed_pred += LGBM.prediction
@@ -180,7 +187,13 @@ if len(stack_name)>0:
         utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
     else:
         utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{len(seed_list)}seed_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
+        pred_cols = [col for col in df_pred.columns if col.count('predict')]
+        df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
+        df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
+        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{len(seed_list)}seed_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
+
 logger.info(f'FEATURE IMPORTANCE PATH: {HOME}/kaggle/home-credit-default-risk/output/cv_feature{feature_num}_importances_{metric}_{cv_score}.csv')
+
 #========================================================================
 
 #========================================================================

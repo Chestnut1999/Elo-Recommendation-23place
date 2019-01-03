@@ -125,12 +125,13 @@ thres_score_list = LGBM.val_score_list
 
 def objective(trial):
 
-    colsample_bytree = trial.suggest_uniform('feature_fraction', 0.5, 0.9)
-    num_leaves = trial.suggest_int('num_leaves', 16, 45)
-    min_child_samples = trial.suggest_int('min_child_samples', 16, 200)
+    colsample_bytree = trial.suggest_uniform('feature_fraction', 0.5, 0.75)
+    num_leaves = trial.suggest_int('num_leaves', 18, 36)
+    min_child_samples = trial.suggest_int('min_child_samples', 100, 160)
+    lambda_l2 = trial.suggest_int('lambda_l2', 0.1, 3.0)
 
     params = {
-        'num_threads': 20,
+        'num_threads': -1,
         'num_leaves': num_leaves,
         'objective':'regression',
         "boosting": "gbdt",
@@ -142,6 +143,7 @@ def objective(trial):
         "colsample_bytree": colsample_bytree,
         "metric": 'rmse',
         "lambda_l1": 0.1,
+        "lambda_l2": lambda_l2,
         "verbosity": -1,
         'random_seed': 1208,
         'bagging_seed':1208,
