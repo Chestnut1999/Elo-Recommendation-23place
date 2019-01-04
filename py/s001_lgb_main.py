@@ -65,6 +65,7 @@ if model_type=='lgb':
 #  params['subsample'] = 0.7
 #  params['lambda_l1'] = 0.0
 #  params['colsample_bytree'] = 0.4
+#  params['num_threads'] = 18
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -107,6 +108,8 @@ try:
 except IndexError:
     seed_list = [1208]
 metric = 'rmse'
+#  metric = 'mse'
+params['metric'] = metric
 fold=5
 fold_type='self'
 group_col_name=''

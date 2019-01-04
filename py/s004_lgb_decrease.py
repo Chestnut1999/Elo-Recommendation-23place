@@ -1,8 +1,10 @@
 #========================================================================
 # Args
 #========================================================================
-learning_rate = 0.1
-early_stopping_rounds = 100
+learning_rate = 0.01
+learning_rate = 0.5
+early_stopping_rounds = 200
+early_stopping_rounds = 2
 num_boost_round = 10000
 key = 'card_id'
 target = 'target'
@@ -34,7 +36,7 @@ try:
 except NameError:
     logger=logger_func()
 
-params = params_elo()
+params = params_elo()[1]
 params['learning_rate'] = learning_rate
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
@@ -54,8 +56,8 @@ for path in win_path_list:
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
-train_feature_list = utils.pararell_load_data(path_list=train_path_list)
-test_feature_list = utils.pararell_load_data(path_list=test_path_list)
+train_feature_list = utils.parallel_load_data(path_list=train_path_list)
+test_feature_list = utils.parallel_load_data(path_list=test_path_list)
 train = pd.concat(train_feature_list, axis=1)
 train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
@@ -66,7 +68,7 @@ test = pd.concat([base_test, test], axis=1)
 # LGBM Setting
 model_type='lgb'
 metric = 'rmse'
-fold=2
+fold=3
 seed=1208
 LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
 
@@ -81,22 +83,25 @@ ignore_list = [key, target, 'merchant_id', 'purchase_date']
 import lightgbm as lgb
 
 # TrainとCVのfoldを合わせる為、Train
-from sklearn.model_selection import KFold
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import mean_squared_error
 
 y = train[target]
 tmp_train = train.drop(target, axis=1)
 
-folds = KFold(n_splits=fold, shuffle=True, random_state=seed)
-kfold = list(folds.split(tmp_train, y))
+train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+kfold = list(folds.split(train,train['outliers'].values))
+train.drop('outliers', axis=1, inplace=True)
 
 use_cols = [col for col in train.columns if col not in ignore_list]
 valid_feat_list = list(np.random.choice(use_cols, len(use_cols)))
-best_valid_list = [100, 100]
+best_valid_list = [100, 100, 100]
 
 valid_log_list = []
 oof_log = train[[key, target]]
 decrease_list = []
+all_score_list = []
 
 for i, valid_feat in enumerate([''] + valid_feat_list):
 
@@ -104,8 +109,9 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
 #========================================================================
 # Valid{i}/{len(valid_feat_list)} Start!!
 # Valid Feature: {valid_feat}
-# Best Valid 1 : {best_valid_list[0]}
-# Best Valid 2 : {best_valid_list[1]}
+# Base Valid 1 : {best_valid_list[0]}
+# Base Valid 2 : {best_valid_list[1]}
+# Base Valid 3 : {best_valid_list[2]}
 #========================================================================''')
     update_cnt = 0
     score_list = []
@@ -146,6 +152,7 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
 
     valid_log_list.append(score_list+[np.mean(score_list)])
     oof_log[f'valid{i}'] = oof
+    all_score_list.append(np.mean(score_list))
 
     if i==0:
         best_valid_list = score_list
@@ -154,7 +161,7 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
         continue
 
     # move feature
-    if update_cnt==fold:
+    if update_cnt>=2:
         logger.info(f"""
 # ==============================
 # Score Update!!
@@ -162,15 +169,19 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
 # Score    : {np.mean(score_list)}
 # ==============================
         """)
-        best_valid_list = score_list
+        #  best_valid_list = score_list
         path_list = glob.glob(win_path)
-        move_list = [path for path in path_list if path.count(valid_feat)]
+        move_list = [path for path in path_list if path.count(valid_feat[8:])]
         for move_path in move_list:
-            shutil.move(move_path, '../features/9_gdrive/')
+            shutil.move(move_path, '../features/5_tmp/')
         decrease_list.append(valid_feat)
 
-effect_feat = pd.Series(np.ones(len(use_cols)), index=use_cols, name='effective')
+effect_feat = pd.Series(np.ones(len(valid_feat_list)+1), index=['base'] + valid_feat_list, name='effective')
 effect_feat.loc[decrease_list] = 0
+effect_feat = effect_feat.to_frame()
+effect_feat['score'] = all_score_list
 
 df_valid_log = pd.DataFrame(np.array(valid_log_list))
-df_valid_log.to_csv('../output/{start_time[4:9]}_decrease_valid_log.csv', index=True)
+df_valid_log.to_csv(f'../output/{start_time[4:11]}_decrease_valid_log.csv', index=True)
+
+effect_feat.to_csv(f'../output/{start_time[4:11]}_decrease_features.csv', index=True)

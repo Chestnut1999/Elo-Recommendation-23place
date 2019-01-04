@@ -127,7 +127,7 @@ for i, path in enumerate(zip(train_feat_list, test_feat_list)):
     LGBM.seed = seed
 
     train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
     kfold = folds.split(train,train['outliers'].values)
     train.drop('outliers', axis=1, inplace=True)
     #========================================================================
