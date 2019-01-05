@@ -29,6 +29,8 @@ stack/
 *.txt
 *.db
 *.gz
+*.bin
+*.out
 
 # C extensions
 *.so
