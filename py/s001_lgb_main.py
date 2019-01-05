@@ -195,6 +195,23 @@ if len(stack_name)>0:
         df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
         utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{len(seed_list)}seed_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
 
+
+# outlierに対するスコアを出す
+from sklearn.metrics import mean_squared_error
+train.reset_index(inplace=True)
+out_ids = train.loc[train.target<-30, key].values
+out_val = train.loc[train.target<-30, target].values
+if len(seed_list)==1:
+    out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+else:
+    out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
+out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+logger.info(f'''
+#========================================================================
+# OUTLIER FIT SCORE: {out_score}
+#========================================================================''')
+
+
 logger.info(f'FEATURE IMPORTANCE PATH: {HOME}/kaggle/home-credit-default-risk/output/cv_feature{feature_num}_importances_{metric}_{cv_score}.csv')
 
 #========================================================================

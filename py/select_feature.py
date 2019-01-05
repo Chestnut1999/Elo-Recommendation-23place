@@ -112,7 +112,11 @@ def move_to_use():
             if path.count(feature[:7]) and path.count(feature[9:]):
                 try:
                     shutil.move(path, win_path)
-                    done_list.append(path)
+                    filename = re.search(r'/([^/.]*).gz', path).group(1)
+                    if filename.count('train'):
+                        done_list.append(filename[14:])
+                    elif filename.count('test'):
+                        done_list.append(filename[13:])
                 except shutil.Error:
                     pass
                     #  shutil.move(path, gdrive_path)
@@ -121,6 +125,8 @@ def move_to_use():
                     #  shutil.move(path, gdrive_path)
 
     logger = logger_func()
+    best_feature = [f[8:] for f in best_feature]
+
     loss_list = set(list(best_feature)) - set(done_list)
     logger.info(f"Loss List:")
     for loss in loss_list:
