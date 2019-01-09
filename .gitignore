@@ -11,7 +11,14 @@ model/
 feim/
 features/
 stack/
+submit/
+log_submit/
+ensemble/
+other/
+.git/
+jpy/
 
+*.git
 *.yaml
 *.config
 *.csv
@@ -31,6 +38,7 @@ stack/
 *.gz
 *.bin
 *.out
+*.log
 
 # C extensions
 *.so

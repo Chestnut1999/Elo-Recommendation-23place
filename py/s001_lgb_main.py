@@ -62,10 +62,24 @@ except NameError:
 if model_type=='lgb':
     params = params_elo()[1]
     params['learning_rate'] = learning_rate
-#  params['subsample'] = 0.7
-#  params['lambda_l1'] = 0.0
-#  params['colsample_bytree'] = 0.4
-#  params['num_threads'] = 18
+
+try:
+    params['num_threads'] = int(sys.argv[5])
+except IndexError:
+    params['num_threads'] = -1
+
+
+# Best outlier fit LB3.690
+params['subsample'] = 0.8757099996397999
+params['colsample_bytree'] = 0.7401342964627846
+params['num_leaves'] = 48
+params['min_child_samples'] = 61
+
+#  params['boosting'] = 'dart'
+#  params['drop_rate'] = 0.05
+#  params['max_drop'] = 5
+#  params['min_child_samples'] = 10
+
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -95,16 +109,28 @@ train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
-train_id = train[key].values
-test_id = test[key].values
+# Exclude Difficult Outlier
+#  clf_result = utils.read_pkl_gzip('../stack/0106_125_outlier_classify_9seed_lgb_binary_CV0-9045159588642034_179features.gz')[[key, 'prediction']]
+#  train = train.merge(clf_result, how='inner', on=key)
+#  tmp1 = train[train.prediction>0.05]
+#  tmp2 = train[train.prediction<0.05][train.target>-30]
+#  train = pd.concat([tmp1, tmp2], axis=0)
+#  del tmp1, tmp2
+#  gc.collect()
+#  train.drop('prediction', axis=1, inplace=True)
+
+# Exclude Outlier
+#  train = train[train.target>-30]
 
 #========================================================================
 
 #========================================================================
 # LGBM Setting
 try:
-    seed_list = np.arange(int(sys.argv[4]))
-    seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005]
+    argv4 = int(sys.argv[4])
+    seed_list = np.arange(argv4)
+    if argv4<=10:
+        seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005, 2019][:argv4]
 except IndexError:
     seed_list = [1208]
 metric = 'rmse'
@@ -180,21 +206,14 @@ for i, seed in enumerate(seed_list):
 test_pred = seed_pred / len(seed_list)
 cv_score = np.mean(cv_list)
 
-cv_feim.to_csv(f'../valid/{start_time[4:12]}_{model_type}_{fname}_feat{feature_num}_CV{cv_score}_lr{learning_rate}.csv', index=False)
-
 #========================================================================
 # STACKING
 if len(stack_name)>0:
     logger.info(f'result_stack shape: {df_pred.shape}')
-    if len(seed_list)==1:
-        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
-    else:
-        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{len(seed_list)}seed_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
+    if len(seed_list)>1:
         pred_cols = [col for col in df_pred.columns if col.count('predict')]
         df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
         df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
-        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{len(seed_list)}seed_{model_type}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
-
 
 # outlierに対するスコアを出す
 from sklearn.metrics import mean_squared_error
@@ -206,21 +225,49 @@ if len(seed_list)==1:
 else:
     out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
 out_score = np.sqrt(mean_squared_error(out_val, out_pred))
-logger.info(f'''
-#========================================================================
-# OUTLIER FIT SCORE: {out_score}
-#========================================================================''')
 
-
-logger.info(f'FEATURE IMPORTANCE PATH: {HOME}/kaggle/home-credit-default-risk/output/cv_feature{feature_num}_importances_{metric}_{cv_score}.csv')
-
-#========================================================================
+# Save
+utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
+cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
 
 #========================================================================
 # Submission
 if len(submit)>0:
     submit[target] = test_pred
-    submit.to_csv(f'../submit/{start_time[4:12]}_submit_{model_type}_rate{learning_rate}_{feature_num}features_{len(seed_list)}seed_CV{cv_score}_LB.csv', index=False)
+    submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
+    submit.to_csv(submit_path, index=False)
+#========================================================================
+
+#========================================================================
+# CV INFO
+
+import re
+path_list = glob.glob('../log_submit/01*.csv')
+path_list.append(submit_path)
+#  path_list_2 = glob.glob('../check_submit/*.csv')
+#  path_list += path_list_2
+
+tmp_list = []
+path_list = list(set(path_list))
+for path in path_list:
+    tmp = pd.read_csv(path)
+    tmp_path = path.replace(".", '-')
+    cv = re.search(r'CV([^/.]*)_LB', tmp_path).group(1)[:-2].replace('-', '.')
+    lb = re.search(r'LB([^/.]*).csv', tmp_path).group(1).replace('-', '.')
+    tmp.rename(columns={'target':f"CV{cv[:9]}_LB{lb}"}, inplace=True)
+    tmp.set_index('card_id', inplace=True)
+    tmp_list.append(tmp.copy())
+
+df = pd.concat(tmp_list, axis=1)
+df_corr = df.corr(method='pearson')
+
+logger.info(f'''
+#========================================================================
+# OUTLIER FIT SCORE: {out_score}
+# SUBMIT CORRELATION:
+{df_corr[f'CV{str(cv_score)[:9]}_LB'].sort_values()}
+#========================================================================''')
+
 #========================================================================
 
 

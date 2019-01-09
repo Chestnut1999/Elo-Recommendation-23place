@@ -1,3 +1,5 @@
+fold=3
+#  params['num_threads'] = 18
 import sys
 import pandas as pd
 
@@ -33,7 +35,7 @@ except IndexError:
 try:
     early_stopping_rounds = int(sys.argv[3])
 except IndexError:
-    early_stopping_rounds = 100
+    early_stopping_rounds = 150
 num_boost_round = 10000
 
 import numpy as np
@@ -96,7 +98,6 @@ test_id = test[key].values
 # LGBM Setting
 seed = 1208
 metric = 'rmse'
-fold=5
 fold_type='self'
 group_col_name=''
 dummie=1
@@ -108,8 +109,7 @@ if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
 
-from sklearn.model_selection import StratifiedKFold
-
+# Valid Features
 feat_list = glob.glob('../features/1_first_valid/*.gz')
 train_feat_list = ['']
 test_feat_list = ['']
@@ -120,30 +120,51 @@ for path in feat_list:
     elif path.count('test'):
         test_feat_list.append(path)
 
+#========================================================================
+
+from sklearn.model_selection import StratifiedKFold
+train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+kfold = list(folds.split(train,train['outliers'].values))
+train.drop('outliers', axis=1, inplace=True)
+
 valid_list = []
+import shutil
+used_path = []
+#========================================================================
+# outlierに対するスコアを出す
+from sklearn.metrics import mean_squared_error
+out_ids = train.loc[train.target<-30, key].values
+out_val = train.loc[train.target<-30, target].values
+#========================================================================
+
 for i, path in enumerate(zip(train_feat_list, test_feat_list)):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
 
-    train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-    folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-    kfold = folds.split(train,train['outliers'].values)
-    train.drop('outliers', axis=1, inplace=True)
-    #========================================================================
-
     if len(path[0])>0:
         train_path = path[0]
         test_path = path[1]
+        used_path += [path[0], path[1]]
         train_feat = utils.get_filename(path=train_path, delimiter='gz')
         train_feat = train_feat[14:]
         test_feat = utils.get_filename(path=test_path, delimiter='gz')
         test_feat = test_feat[13:]
 
-        train[train_feat] = utils.read_pkl_gzip(train_path)
-        test[train_feat] = utils.read_pkl_gzip(test_path)
+        try:
+            train[train_feat] = utils.read_pkl_gzip(train_path)
+            test[train_feat] = utils.read_pkl_gzip(test_path)
+        except FileNotFoundError:
+            continue
     else:
         train_feat = 'base'
+
+    logger.info(f'''
+    #========================================================================
+    # No: {i}/{len(train_feat_list)}
+    # Valid Feature: {train_feat}
+    #========================================================================''')
 
     #========================================================================
     # Train & Prediction Start
@@ -166,17 +187,38 @@ for i, path in enumerate(zip(train_feat_list, test_feat_list)):
     cv_score = LGBM.cv_score
     cv_feim = LGBM.cv_feim
     feature_num = len(LGBM.use_cols)
-    df_pred = LGBM.result_stack.copy()
+    df_pred = LGBM.result_stack
 
     if len(path[0])>0:
         train.drop(train_feat, axis=1, inplace=True)
         test.drop(train_feat, axis=1, inplace=True)
 
+    #========================================================================
+    # outlierに対するスコアを出す
+    out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+    out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+    #========================================================================
+
     LGBM.val_score_list.append(cv_score)
+    LGBM.val_score_list.append(out_score)
     tmp = pd.Series(LGBM.val_score_list, name=f"{i}_{train_feat}")
     valid_list.append(tmp.copy())
     if i==0:
         base_valid = tmp.copy()
+
+    if i%10==1 and i>9:
+        df_valid = pd.concat(valid_list, axis=1)
+        print("Enroute Saving...")
+        df_valid.to_csv(f'../output/{start_time[4:12]}_elo_multi_feat_valid_lr{learning_rate}.csv', index=True)
+        print("Enroute Saving Complete.")
+        for p in used_path:
+            shutil.move(p, '../features/2_second_valid/')
+        used_path = []
+else:
+    for p in used_path:
+        shutil.move(p, '../features/2_second_valid/')
+    used_path = []
+
 
 df_valid = pd.concat(valid_list, axis=1)
 
@@ -184,4 +226,4 @@ for col in df_valid.columns:
     if col.count('base'):continue
     df_valid[f"val_{col}"] = (df_valid[col].values < base_valid.values) * 1
 
-df_valid.to_csv(f'../output/{start_time[4:11]}_elo_multi_feat_valid.csv', index=True)
+df_valid.to_csv(f'../output/{start_time[4:12]}_elo_multi_feat_valid_lr{learning_rate}.csv', index=True)

@@ -1,10 +1,10 @@
 #========================================================================
 # Args
 #========================================================================
-learning_rate = 0.01
-learning_rate = 0.5
+learning_rate = 0.05
+#  learning_rate = 0.01
+early_stopping_rounds = 150
 early_stopping_rounds = 200
-early_stopping_rounds = 2
 num_boost_round = 10000
 key = 'card_id'
 target = 'target'
@@ -38,6 +38,7 @@ except NameError:
 
 params = params_elo()[1]
 params['learning_rate'] = learning_rate
+#  params['num_threads'] = 18
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -46,6 +47,10 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 win_path = '../features/4_winner/*.gz'
 base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path)
+# tmp_path_listには検証中のfeatureを入れてある
+tmp_path_list = glob.glob('../features/5_tmp/*.gz')
+win_path_list += tmp_path_list
+
 train_path_list = []
 test_path_list = []
 for path in win_path_list:
@@ -170,18 +175,24 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
 # ==============================
         """)
         #  best_valid_list = score_list
-        path_list = glob.glob(win_path)
-        move_list = [path for path in path_list if path.count(valid_feat[8:])]
+        win_path_list = glob.glob(win_path)
+        tmp_path_list = glob.glob('../features/5_tmp/*.gz')
+        win_path_list += tmp_path_list
+        move_list = [path for path in win_path_list if path.count(valid_feat[8:])]
         for move_path in move_list:
-            shutil.move(move_path, '../features/5_tmp/')
+            try:
+                shutil.move(move_path, '../features/5_tmp/')
+            except shutil.Error:
+                pass
         decrease_list.append(valid_feat)
 
 effect_feat = pd.Series(np.ones(len(valid_feat_list)+1), index=['base'] + valid_feat_list, name='effective')
 effect_feat.loc[decrease_list] = 0
 effect_feat = effect_feat.to_frame()
 effect_feat['score'] = all_score_list
+effect_feat = effect_feat.drop_duplicates()
 
 df_valid_log = pd.DataFrame(np.array(valid_log_list))
-df_valid_log.to_csv(f'../output/{start_time[4:11]}_decrease_valid_log.csv', index=True)
+df_valid_log.to_csv(f'../output/{start_time[4:11]}_elo_decrease_valid_log.csv', index=True)
 
-effect_feat.to_csv(f'../output/{start_time[4:11]}_decrease_features.csv', index=True)
+effect_feat.to_csv(f'../output/{start_time[4:11]}_elo_decrease_features.csv', index=True)
