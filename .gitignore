@@ -39,6 +39,8 @@ jpy/
 *.bin
 *.out
 *.log
+*.png
+*.jpg
 
 # C extensions
 *.so
