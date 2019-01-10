@@ -77,6 +77,12 @@ params['min_child_samples'] = 61
 
 from sklearn.model_selection import ParameterGrid
 
+
+# Ready Parmas
+
+reg_sqrt = {'reg_sqrt':True}
+objective_list = ['quantile', 'gamma', 'tweedie']
+alpha = {"alpha":[0.2, 0.4, 0.6, 0.8]}
 param_candidate = {'num_leaves': [4,6,8,10,12,14,16], 'max_depth': [3, 4]}
 param_grid = list(ParameterGrid(param_candidate))
 
@@ -107,6 +113,12 @@ train = pd.concat(train_feature_list, axis=1)
 train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
+
+
+from sklearn.preprocessing import MinMaxScaler
+scaler = MinMaxScaler()
+#  scaler.fit_transform(train[target].values.reshape(-1,1))
+train[target] = scaler.fit_transform(train[target].values.reshape(-1,1)).ravel()
 
 # Exclude Difficult Outlier
 #  clf_result = utils.read_pkl_gzip('../stack/0106_125_outlier_classify_9seed_lgb_binary_CV0-9045159588642034_179features.gz')[[key, 'prediction']]
@@ -147,10 +159,11 @@ cv_list = []
 out_list = []
 
 from sklearn.model_selection import StratifiedKFold
-#  for i, seed in enumerate(seed_list):
-for valid_param in param_grid:
+for i, obj in enumerate(objective_list):
+#  for valid_param in param_grid:
 
-    params.update(valid_param)
+    #  params.update(valid_param)
+    params['objective'] = obj
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
@@ -180,6 +193,7 @@ for valid_param in param_grid:
         ,early_stopping_rounds=early_stopping_rounds
         ,oof_flg=oof_flg
         ,self_kfold=kfold
+        ,scaler=scaler
     )
 
     df_pred = LGBM.result_stack.copy()

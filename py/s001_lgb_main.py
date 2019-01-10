@@ -6,7 +6,7 @@ import pandas as pd
 #========================================================================
 key = 'card_id'
 target = 'target'
-ignore_list = [key, target, 'merchant_id', 'weight']
+ignore_list = [key, target, 'merchant_id', 'column_0']
 
 win_path = f'../features/4_winner/*.gz'
 stack_name='en_route'
@@ -34,7 +34,7 @@ try:
     early_stopping_rounds = int(sys.argv[3])
 except IndexError:
     early_stopping_rounds = 100
-num_boost_round = 30000
+num_boost_round = 10000
 
 import numpy as np
 import datetime
@@ -162,8 +162,6 @@ for i, seed in enumerate(seed_list):
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
     kfold = folds.split(train,train['outliers'].values)
 
-    #  train['weight'] = train['outliers']*-0.2 + 1.0
-    #  params['weight'] = 'weight'
     train.drop('outliers', axis=1, inplace=True)
 #========================================================================
 
