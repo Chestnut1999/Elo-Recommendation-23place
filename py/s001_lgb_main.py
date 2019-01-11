@@ -240,7 +240,7 @@ if len(submit)>0:
 # CV INFO
 
 import re
-path_list = glob.glob('../log_submit/01*.csv')
+path_list = glob.glob('../log_submit/*CV*LB*.csv')
 path_list.append(submit_path)
 #  path_list_2 = glob.glob('../check_submit/*.csv')
 #  path_list += path_list_2
