@@ -30,6 +30,7 @@ jpy/
 *.tsv
 *.twb
 *.twbx
+*.twbr
 *.xls
 *.xlsx
 *.ppt
