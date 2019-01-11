@@ -10,7 +10,15 @@ valid/
 model/
 feim/
 features/
+stack/
+submit/
+log_submit/
+ensemble/
+other/
+.git/
+jpy/
 
+*.git
 *.yaml
 *.config
 *.csv
@@ -29,6 +37,11 @@ features/
 *.txt
 *.db
 *.gz
+*.bin
+*.out
+*.log
+*.png
+*.jpg
 
 # C extensions
 *.so

@@ -103,16 +103,20 @@ def move_to_use():
     second_list = glob.glob('../features/2_second_valid/*')
     third_list = glob.glob('../features/3_third_valid/*')
     tmp_list = glob.glob('../features/5_tmp/*')
-    path_list = first_list + second_list + third_list + tmp_list + win_list
+    path_list = third_list + tmp_list + win_list
+    #  path_list = first_list + second_list + third_list + tmp_list + win_list
 
     done_list = []
     for feature in best_feature:
         for path in path_list:
-
-            if path.count(feature[:7]) and path.count(feature[9:]):
+            if path.replace('.0', '_0').count(feature[:7]) and path.replace('.0', '_0').count(feature[9:]):
                 try:
                     shutil.move(path, win_path)
-                    done_list.append(path)
+                    filename = re.search(r'/([^/.]*).gz', path.replace('.0', '_0')).group(1)
+                    if filename.count('train'):
+                        done_list.append(filename[14:])
+                    elif filename.count('test'):
+                        done_list.append(filename[13:])
                 except shutil.Error:
                     pass
                     #  shutil.move(path, gdrive_path)
@@ -121,6 +125,8 @@ def move_to_use():
                     #  shutil.move(path, gdrive_path)
 
     logger = logger_func()
+    best_feature = [f[8:] for f in best_feature]
+
     loss_list = set(list(best_feature)) - set(done_list)
     logger.info(f"Loss List:")
     for loss in loss_list:
