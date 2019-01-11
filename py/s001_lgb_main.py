@@ -110,14 +110,14 @@ test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
 # Exclude Difficult Outlier
-#  clf_result = utils.read_pkl_gzip('../stack/0106_125_outlier_classify_9seed_lgb_binary_CV0-9045159588642034_179features.gz')[[key, 'prediction']]
-#  train = train.merge(clf_result, how='inner', on=key)
-#  tmp1 = train[train.prediction>0.05]
-#  tmp2 = train[train.prediction<0.05][train.target>-30]
-#  train = pd.concat([tmp1, tmp2], axis=0)
-#  del tmp1, tmp2
-#  gc.collect()
-#  train.drop('prediction', axis=1, inplace=True)
+clf_result = utils.read_pkl_gzip('../stack/0111_145_outlier_classify_9seed_lgb_binary_CV0-9045939277654236_188features.gz')[[key, 'prediction']]
+train = train.merge(clf_result, how='inner', on=key)
+tmp1 = train[train.prediction>0.01]
+tmp2 = train[train.prediction<0.01][train.target>-30]
+train = pd.concat([tmp1, tmp2], axis=0)
+del tmp1, tmp2
+gc.collect()
+train.drop('prediction', axis=1, inplace=True)
 
 # Exclude Outlier
 #  train = train[train.target>-30]

@@ -27,11 +27,11 @@ except IndexError:
 try:
     learning_rate = float(sys.argv[2])
 except IndexError:
-    learning_rate = 0.005
+    learning_rate = 0.01
 try:
     early_stopping_rounds = int(sys.argv[3])
 except IndexError:
-    early_stopping_rounds = 200
+    early_stopping_rounds = 150
 num_boost_round = 10000
 
 import numpy as np
@@ -104,15 +104,14 @@ test = pd.concat([base_test, test], axis=1)
 #  train = train[train.prediction<0.01]
 
 # Exclude Difficult Outlier
-clf_result = utils.read_pkl_gzip('../stack/0108_203_outlier_classify_9seed_lgb_binary_CV0-9562150189253636_175features.gz')[[key, 'prediction']]
-train = train.merge(clf_result, how='inner', on=key)
-tmp1 = train[train.prediction>=0.02]
-tmp2 = train[train.prediction<0.02][train.target>-30]
-train = pd.concat([tmp1, tmp2], axis=0)
-del tmp1, tmp2
-gc.collect()
-train.drop('prediction', axis=1, inplace=True)
-
+#  clf_result = utils.read_pkl_gzip('../stack/0108_203_outlier_classify_9seed_lgb_binary_CV0-9562150189253636_175features.gz')[[key, 'prediction']]
+#  train = train.merge(clf_result, how='inner', on=key)
+#  tmp1 = train[train.prediction>=0.02]
+#  tmp2 = train[train.prediction<0.02][train.target>-30]
+#  train = pd.concat([tmp1, tmp2], axis=0)
+#  del tmp1, tmp2
+#  gc.collect()
+#  train.drop('prediction', axis=1, inplace=True)
 
 #========================================================================
 
@@ -142,8 +141,6 @@ if len(drop_list):
     test.drop(drop_list, axis=1, inplace=True)
 
 #========================================================================
-
-
 # seed_avg
 seed_pred = np.zeros(len(test))
 cv_list = []
