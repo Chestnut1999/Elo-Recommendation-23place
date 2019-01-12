@@ -70,10 +70,12 @@ except IndexError:
 
 
 # Best outlier fit LB3.690
-params['subsample'] = 0.8757099996397999
-params['colsample_bytree'] = 0.7401342964627846
-params['num_leaves'] = 48
-params['min_child_samples'] = 61
+num_leaves = 31
+num_leaves = 48
+#  params['subsample'] = 0.8757099996397999
+#  params['colsample_bytree'] = 0.7401342964627846
+params['num_leaves'] = num_leaves
+#  params['min_child_samples'] = 61
 
 #  params['boosting'] = 'dart'
 #  params['drop_rate'] = 0.05
@@ -110,14 +112,14 @@ test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
 # Exclude Difficult Outlier
-clf_result = utils.read_pkl_gzip('../stack/0111_145_outlier_classify_9seed_lgb_binary_CV0-9045939277654236_188features.gz')[[key, 'prediction']]
-train = train.merge(clf_result, how='inner', on=key)
-tmp1 = train[train.prediction>0.01]
-tmp2 = train[train.prediction<0.01][train.target>-30]
-train = pd.concat([tmp1, tmp2], axis=0)
-del tmp1, tmp2
-gc.collect()
-train.drop('prediction', axis=1, inplace=True)
+#  clf_result = utils.read_pkl_gzip('../stack/0111_145_outlier_classify_9seed_lgb_binary_CV0-9045939277654236_188features.gz')[[key, 'prediction']]
+#  train = train.merge(clf_result, how='inner', on=key)
+#  tmp1 = train[train.prediction>0.01]
+#  tmp2 = train[train.prediction<0.01][train.target>-30]
+#  train = pd.concat([tmp1, tmp2], axis=0)
+#  del tmp1, tmp2
+#  gc.collect()
+#  train.drop('prediction', axis=1, inplace=True)
 
 # Exclude Outlier
 #  train = train[train.target>-30]
@@ -153,6 +155,7 @@ from sklearn.model_selection import StratifiedKFold
 # seed_avg
 seed_pred = np.zeros(len(test))
 cv_list = []
+iter_list = []
 for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
@@ -188,12 +191,14 @@ for i, seed in enumerate(seed_list):
 
     if i==0:
         cv_list.append(LGBM.cv_score)
+        iter_list.append(LGBM.iter_avg)
         cv_feim = LGBM.cv_feim
         feature_num = len(LGBM.use_cols)
         df_pred = LGBM.result_stack.copy()
     else:
         cv_score = LGBM.cv_score
         cv_list.append(cv_score)
+        iter_list.append(LGBM.iter_avg)
         LGBM.cv_feim.columns = [col if col.count('feature') else f"{col}_{seed}" for col in LGBM.cv_feim.columns]
         cv_feim = cv_feim.merge(LGBM.cv_feim, how='inner', on='feature')
         df_pred = df_pred.merge(LGBM.result_stack.rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
@@ -203,6 +208,7 @@ for i, seed in enumerate(seed_list):
 #========================================================================
 test_pred = seed_pred / len(seed_list)
 cv_score = np.mean(cv_list)
+iter_avg = np.int(np.mean(iter_list))
 
 #========================================================================
 # STACKING
@@ -213,26 +219,29 @@ if len(stack_name)>0:
         df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
         df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
 
-# outlierに対するスコアを出す
-from sklearn.metrics import mean_squared_error
-train.reset_index(inplace=True)
-out_ids = train.loc[train.target<-30, key].values
-out_val = train.loc[train.target<-30, target].values
-if len(seed_list)==1:
-    out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+if len(train[train[target]<-30])>0:
+    # outlierに対するスコアを出す
+    from sklearn.metrics import mean_squared_error
+    train.reset_index(inplace=True)
+    out_ids = train.loc[train.target<-30, key].values
+    out_val = train.loc[train.target<-30, target].values
+    if len(seed_list)==1:
+        out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+    else:
+        out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
+    out_score = np.sqrt(mean_squared_error(out_val, out_pred))
 else:
-    out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
-out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+    out_score = 0
 
 # Save
-utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
-cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
+utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
+cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
 
 #========================================================================
 # Submission
 if len(submit)>0:
     submit[target] = test_pred
-    submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
+    submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
     submit.to_csv(submit_path, index=False)
 #========================================================================
 
