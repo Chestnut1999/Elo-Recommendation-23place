@@ -16,7 +16,6 @@ log_submit/
 ensemble/
 other/
 .git/
-jpy/
 
 *.git
 *.yaml
