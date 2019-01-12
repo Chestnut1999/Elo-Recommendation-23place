@@ -60,13 +60,6 @@ if model_type=='lgb':
     params = params_elo()[1]
     params['learning_rate'] = learning_rate
 
-#  Best outlier fit LB3.691
-params['subsample'] = 0.8757099996397999
-params['colsample_bytree'] = 0.7401342964627846
-params['num_leaves'] = 48
-params['min_child_samples'] = 61
-params['num_threads'] = 35
-
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -124,8 +117,8 @@ except IndexError:
     seed_list = [1208]
 
 
-#  train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
-train[target] = train[target].map(lambda x: 1 if x>1.5 else 0)
+train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
+#  train[target] = train[target].map(lambda x: 1 if x>1.5 else 0)
 metric = 'auc'
 params['objective'] = 'binary'
 params['metric'] = metric
@@ -149,6 +142,14 @@ for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
+
+    if i>=5:
+        #  Best outlier fit LB3.691
+        params['num_leaves'] = 48
+        params['subsample'] = 0.8757099996397999
+        params['colsample_bytree'] = 0.7401342964627846
+        params['min_child_samples'] = 61
+        params['num_threads'] = -1
 
 #========================================================================
 # Train & Prediction Start

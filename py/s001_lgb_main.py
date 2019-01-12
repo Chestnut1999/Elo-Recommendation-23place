@@ -71,11 +71,13 @@ except IndexError:
 
 # Best outlier fit LB3.690
 num_leaves = 31
-num_leaves = 48
-#  params['subsample'] = 0.8757099996397999
-#  params['colsample_bytree'] = 0.7401342964627846
+#  num_leaves = 48
 params['num_leaves'] = num_leaves
-#  params['min_child_samples'] = 61
+if num_leaves>40:
+    params['num_leaves'] = num_leaves
+    params['subsample'] = 0.8757099996397999
+    params['colsample_bytree'] = 0.7401342964627846
+    params['min_child_samples'] = 61
 
 #  params['boosting'] = 'dart'
 #  params['drop_rate'] = 0.05
@@ -113,15 +115,19 @@ test = pd.concat([base_test, test], axis=1)
 
 # Exclude Difficult Outlier
 #  clf_result = utils.read_pkl_gzip('../stack/0111_145_outlier_classify_9seed_lgb_binary_CV0-9045939277654236_188features.gz')[[key, 'prediction']]
-#  train = train.merge(clf_result, how='inner', on=key)
+clf_result = utils.read_pkl_gzip('../stack/0112_155_outlier_classify_9seed_lgb_binary_CV0-9047260065151934_200features.gz')[[key, 'pred_mean']]
+train = train.merge(clf_result, how='inner', on=key)
 #  tmp1 = train[train.prediction>0.01]
 #  tmp2 = train[train.prediction<0.01][train.target>-30]
-#  train = pd.concat([tmp1, tmp2], axis=0)
-#  del tmp1, tmp2
-#  gc.collect()
+tmp1 = train[train.pred_mean>0.01]
+tmp2 = train[train.pred_mean<0.01][train.target>-30]
+train = pd.concat([tmp1, tmp2], axis=0)
+del tmp1, tmp2
+gc.collect()
 #  train.drop('prediction', axis=1, inplace=True)
+train.drop('pred_mean', axis=1, inplace=True)
 
-# Exclude Outlier
+#  Exclude Outlier
 #  train = train[train.target>-30]
 
 #========================================================================
@@ -160,6 +166,12 @@ for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
+
+    if i>=5:
+        params['num_leaves'] = 48
+        params['subsample'] = 0.8757099996397999
+        params['colsample_bytree'] = 0.7401342964627846
+        params['min_child_samples'] = 61
 
     train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
