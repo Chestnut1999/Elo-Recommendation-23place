@@ -1,6 +1,6 @@
 out_part = ['', 'part', 'all'][0]
 num_leaves = 31
-num_leaves = 48
+#  num_leaves = 48
 import sys
 import pandas as pd
 
@@ -11,7 +11,8 @@ key = 'card_id'
 target = 'target'
 ignore_list = [key, target, 'merchant_id', 'column_0']
 
-win_path = f'../features/4_winner/*.gz'
+#  win_path = f'../features/4_winner/*.gz'
+win_path = f'../season1_features/features/4_winner/*.gz'
 stack_name='en_route'
 fname=''
 xray=False
@@ -98,7 +99,7 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path)
 # tmp_path_listには検証中のfeatureを入れてある
-tmp_path_list = glob.glob('../features/5_tmp/*.gz')
+tmp_path_list = glob.glob('../season1_features/features/5_tmp/*.gz')
 win_path_list += tmp_path_list
 
 train_path_list = []
@@ -118,7 +119,7 @@ train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
-fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-7321935894168574_LB.gz')['prediction'].values
+fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
 train['fm_keras'] = fm_feat[:len(train)]
 test['fm_keras'] = fm_feat[len(train):]
 
