@@ -1,3 +1,6 @@
+out_part = ['', 'part', 'all'][0]
+num_leaves = 31
+num_leaves = 48
 import sys
 import pandas as pd
 
@@ -70,8 +73,10 @@ except IndexError:
 
 
 # Best outlier fit LB3.690
-num_leaves = 31
-#  num_leaves = 48
+#  params['max_depth'] = 2
+#  params['colsample_bytree'] = 0.6
+#  num_boost_round = 100000
+#  num_leaves = 4
 params['num_leaves'] = num_leaves
 if num_leaves>40:
     params['num_leaves'] = num_leaves
@@ -113,22 +118,28 @@ train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
-# Exclude Difficult Outlier
-#  clf_result = utils.read_pkl_gzip('../stack/0111_145_outlier_classify_9seed_lgb_binary_CV0-9045939277654236_188features.gz')[[key, 'prediction']]
-clf_result = utils.read_pkl_gzip('../stack/0112_155_outlier_classify_9seed_lgb_binary_CV0-9047260065151934_200features.gz')[[key, 'pred_mean']]
-train = train.merge(clf_result, how='inner', on=key)
-#  tmp1 = train[train.prediction>0.01]
-#  tmp2 = train[train.prediction<0.01][train.target>-30]
-tmp1 = train[train.pred_mean>0.01]
-tmp2 = train[train.pred_mean<0.01][train.target>-30]
-train = pd.concat([tmp1, tmp2], axis=0)
-del tmp1, tmp2
-gc.collect()
-#  train.drop('prediction', axis=1, inplace=True)
-train.drop('pred_mean', axis=1, inplace=True)
+fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-7321935894168574_LB.gz')['prediction'].values
+train['fm_keras'] = fm_feat[:len(train)]
+test['fm_keras'] = fm_feat[len(train):]
 
-#  Exclude Outlier
-#  train = train[train.target>-30]
+
+if out_part=='part':
+    # Exclude Difficult Outlier
+    #  clf_result = utils.read_pkl_gzip('../stack/0111_145_outlier_classify_9seed_lgb_binary_CV0-9045939277654236_188features.gz')[[key, 'prediction']]
+    clf_result = utils.read_pkl_gzip('../stack/0112_155_outlier_classify_9seed_lgb_binary_CV0-9047260065151934_200features.gz')[[key, 'pred_mean']]
+    train = train.merge(clf_result, how='inner', on=key)
+    #  tmp1 = train[train.prediction>0.01]
+    #  tmp2 = train[train.prediction<0.01][train.target>-30]
+    tmp1 = train[train.pred_mean>0.01]
+    tmp2 = train[train.pred_mean<0.01][train.target>-30]
+    train = pd.concat([tmp1, tmp2], axis=0)
+    del tmp1, tmp2
+    gc.collect()
+    #  train.drop('prediction', axis=1, inplace=True)
+    train.drop('pred_mean', axis=1, inplace=True)
+elif out_part=='all':
+    #  Exclude Outlier
+    train = train[train.target>-30]
 
 #========================================================================
 
