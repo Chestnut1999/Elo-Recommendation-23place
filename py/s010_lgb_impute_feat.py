@@ -1,6 +1,6 @@
 out_part = ['', 'part', 'all'][0]
 num_leaves = 31
-num_leaves = 48
+#  num_leaves = 48
 import sys
 import pandas as pd
 
@@ -12,7 +12,7 @@ target = 'target'
 ignore_list = [key, target, 'merchant_id', 'column_0']
 
 win_path = f'../features/4_winner/*.gz'
-#  win_path = f'../season1_features/4_winner/*.gz'
+#  win_path = f'../season1_features/features/4_winner/*.gz'
 stack_name='en_route'
 fname=''
 xray=False
@@ -78,7 +78,6 @@ except IndexError:
 #  params['colsample_bytree'] = 0.6
 #  num_boost_round = 100000
 #  num_leaves = 4
-#  params['colsample_bytree'] = 0.2
 params['num_leaves'] = num_leaves
 if num_leaves>40:
     params['num_leaves'] = num_leaves
@@ -95,62 +94,47 @@ if num_leaves>40:
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 
-#  ========================================================================
-#  Data Load
-base = utils.read_df_pkl('../input/base*')
-win_path_list = glob.glob(win_path)
-# tmp_path_listには検証中のfeatureを入れてある
-tmp_path_list = glob.glob('../features/5_tmp/*.gz')
-#  tmp_path_list = glob.glob('../season1_features/features/5_tmp/*.gz')
-win_path_list += tmp_path_list
+#========================================================================
+# Data Load
+#  base = utils.read_df_pkl('../input/base*')
+#  win_path_list = glob.glob(win_path)
+#  # tmp_path_listには検証中のfeatureを入れてある
+#  tmp_path_list = glob.glob('../features/5_tmp/*.gz')
+#  #  tmp_path_list = glob.glob('../season1_features/features/5_tmp/*.gz')
+#  win_path_list += tmp_path_list
 
-train_path_list = []
-test_path_list = []
-for path in win_path_list:
-    if path.count('train'):
-        train_path_list.append(path)
-    elif path.count('test'):
-        test_path_list.append(path)
+#  train_path_list = []
+#  test_path_list = []
+#  for path in win_path_list:
+#      if path.count('train'):
+#          train_path_list.append(path)
+#      elif path.count('test'):
+#          test_path_list.append(path)
 
-base_train = base[~base[target].isnull()].reset_index(drop=True)
-base_test = base[base[target].isnull()].reset_index(drop=True)
-train_feature_list = utils.parallel_load_data(path_list=train_path_list)
-test_feature_list = utils.parallel_load_data(path_list=test_path_list)
-train = pd.concat(train_feature_list, axis=1)
-train = pd.concat([base_train, train], axis=1)
-test = pd.concat(test_feature_list, axis=1)
-test = pd.concat([base_test, test], axis=1)
+#  base_train = base[~base[target].isnull()].reset_index(drop=True)
+#  base_test = base[base[target].isnull()].reset_index(drop=True)
+#  train_feature_list = utils.parallel_load_data(path_list=train_path_list)
+#  test_feature_list = utils.parallel_load_data(path_list=test_path_list)
+#  train = pd.concat(train_feature_list, axis=1)
+#  train = pd.concat([base_train, train], axis=1)
+#  test = pd.concat(test_feature_list, axis=1)
+#  test = pd.concat([base_test, test], axis=1)
 
+train = utils.read_df_pkl('../input/hist_clean_rdm*')
+target = 'installments'
+test = train[train[target].isnull()].drop(target, axis=1)
+utils.to_df_pkl(df=test, path='../input/', fname='pred_installments_test_set')
+sys.exit()
+train = train[train[target]>-2]
 
-try:
-    if int(sys.argv[6])>0:
-        fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
-        train['fm_keras'] = fm_feat[:len(train)]
-        test['fm_keras'] = fm_feat[len(train):]
+if int(sys.argv[6])>0:
+    fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
+    train['fm_keras'] = fm_feat[:len(train)]
+    test['fm_keras'] = fm_feat[len(train):]
 
-        fm_feat = utils.read_pkl_gzip('../stack/0112_234_stack_keras_lr0_72feats_1seed_128.0batch_OUT_CV0-688061879169805_LB.gz')['prediction'].values
-        train['fm_keras_2'] = fm_feat[:len(train)]
-        test['fm_keras_2'] = fm_feat[len(train):]
-except IndexError:
-    pass
-
-last_pred = False
-if last_pred:
-    last1_feat = utils.read_pkl_gzip('../stack/0114_215_stack_lgb_lr0.01_179feats_1seed_31leaves_iter1069_OUT30.7802_CV3-701340261781586_LB.gz')['prediction'].values
-    train['last1_pred'] = last1_feat[:len(train)]
-    test['last1_pred'] = last1_feat[len(train):]
-
-    last2_feat = utils.read_pkl_gzip('../stack/0114_194_stack_lgb_lr0.01_158feats_1seed_31leaves_iter458_OUT31.1844_CV3-7562439959526808_LB.gz')['prediction'].values
-    train['last2_pred'] = last2_feat[:len(train)]
-    test['last2_pred'] = last2_feat[len(train):]
-
-    last3_feat = utils.read_pkl_gzip('../stack/0114_214_stack_lgb_lr0.01_141feats_1seed_31leaves_iter434_OUT31.3720_CV3-7707044153902585_LB.gz')['prediction'].values
-    train['last3_pred'] = last3_feat[:len(train)]
-    test['last3_pred'] = last3_feat[len(train):]
-
-    last4_feat = utils.read_pkl_gzip('../stack/0114_214_stack_lgb_lr0.01_149feats_1seed_31leaves_iter311_OUT31.8093_CV3-7945856392534916_LB.gz')['prediction'].values
-    train['last4_pred'] = last4_feat[:len(train)]
-    test['last4_pred'] = last4_feat[len(train):]
+    fm_feat = utils.read_pkl_gzip('../stack/0112_234_stack_keras_lr0_72feats_1seed_128.0batch_OUT_CV0-688061879169805_LB.gz')['prediction'].values
+    train['fm_keras_2'] = fm_feat[:len(train)]
+    test['fm_keras_2'] = fm_feat[len(train):]
 
 
 if out_part=='part':
@@ -187,7 +171,7 @@ metric = 'rmse'
 params['metric'] = metric
 fold=5
 fold_type='self'
-#  fold_type='stratified'
+fold_type='stratified'
 group_col_name=''
 dummie=1
 oof_flg=True
@@ -216,10 +200,10 @@ for i, seed in enumerate(seed_list):
         params['colsample_bytree'] = 0.7401342964627846
         params['min_child_samples'] = 61
 
-    train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-    kfold = folds.split(train,train['outliers'].values)
-    train.drop('outliers', axis=1, inplace=True)
+    #  train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+    #  folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    #  kfold = folds.split(train,train['outliers'].values)
+    #  train.drop('outliers', axis=1, inplace=True)
 #========================================================================
 
 #========================================================================
@@ -237,7 +221,7 @@ for i, seed in enumerate(seed_list):
         ,num_boost_round=num_boost_round
         ,early_stopping_rounds=early_stopping_rounds
         ,oof_flg=oof_flg
-        ,self_kfold=kfold
+        #  ,self_kfold=kfold
         #  ,comp_name='elo'
     )
 
