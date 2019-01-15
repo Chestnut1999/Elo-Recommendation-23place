@@ -12,7 +12,7 @@ key = 'card_id'
 target = 'target'
 ignore_list = [key, target, 'merchant_id', 'column_0']
 
-win_path = f'../features/4_winner/*.gz'
+win_path = f'../season1_features/4_winner/*.gz'
 stack_name='en_route'
 fname=''
 xray=False
@@ -104,7 +104,7 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path)
 # tmp_path_listには検証中のfeatureを入れてある
-tmp_path_list = glob.glob('../features/5_tmp/*.gz')
+tmp_path_list = glob.glob('../season1_features/5_tmp/*.gz')
 win_path_list += tmp_path_list
 
 train_path_list = []

@@ -11,9 +11,9 @@ except IndexError:
     code=0
 except ValueError:
     pass
-win_path = f'../features/4_winner/'
-second_path = '../features/2_second_valid/'
-gdrive_path = '../features/9_gdrive/'
+win_path = f'../season1_features/4_winner/'
+second_path = '../season1_features/2_second_valid/'
+gdrive_path = '../season1_features/9_gdrive/'
 ignore_list = []
 
 import numpy as np
@@ -39,7 +39,7 @@ from utils import logger_func
 #  sys.exit()
 
 
-def to_win_dir_Nfeatures(path='../features/1_first_valid/*.gz', N=100):
+def to_win_dir_Nfeatures(path='../season1_features/1_first_valid/*.gz', N=100):
     path_list = glob.glob(path)
     np.random.seed(1208)
     np.random.shuffle(path_list)
@@ -49,8 +49,8 @@ def to_win_dir_Nfeatures(path='../features/1_first_valid/*.gz', N=100):
             shutil.move('train_'+path, win_path)
             shutil.move('test_'+path, win_path)
         except shutil.Error:
-            shutil.move('train_'+path, '../features/9_delete')
-            shutil.move('test_'+path, '../features/9_delete')
+            shutil.move('train_'+path, '../season1_features/9_delete')
+            shutil.move('test_'+path, '../season1_features/9_delete')
 
 def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
     logger = logger_func()
@@ -75,19 +75,15 @@ def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
         if len(best_feature)==0:
             sys.exit()
 
-        tmp_list = glob.glob('../features/4_winner/*')
-        path_list = []
-
-        for path in tmp_list:
-            path_list.append(path.replace('.0', '_0'))
-
+        path_list = glob.glob('../season1_features/4_winner/*')
         for feature in best_feature:
             move_path = [path for path in path_list if path.count(feature[:7]) and path.count(feature[9:]) and feature not in ignore_list]
             for move in move_path:
                 try:
-                    shutil.move(move.replace('_0_', '.0_'), second_path)
+                    shutil.move(move, second_path)
                 except FileNotFoundError:
-                    logger.info(f'FileNotFoundError: {feature}')
+                    print(f'FileNotFound. : {feature}.gz')
+                    pass
                 except shutil.Error:
                     logger.info(f'Shutil Error: {feature}')
         print(f'move to third_valid:{len(best_feature)}')
@@ -103,9 +99,9 @@ def move_to_use():
     best_feature = best_select['feature'].values
 
     win_list = glob.glob(win_path + '*')
-    first_list = glob.glob('../features/1_first_valid/*')
-    second_list = glob.glob('../features/2_second_valid/*')
-    third_list = glob.glob('../features/3_third_valid/*')
+    first_list = glob.glob('../season1_features/1_first_valid/*')
+    second_list = glob.glob('../season1_features/2_second_valid/*')
+    third_list = glob.glob('../season1_features/3_third_valid/*')
     tmp_list = glob.glob('../features/5_tmp/*')
     path_list = third_list + tmp_list + win_list
     #  path_list = first_list + second_list + third_list + tmp_list + win_list
@@ -137,10 +133,10 @@ def move_to_use():
         logger.info(f"{loss}")
 
 
-def move_feature(feature_name, move_path='../features/9_delete'):
+def move_feature(feature_name, move_path='../season1_features/9_delete'):
 
     try:
-        shutil.move(f'../features/4_winner/{feature_name}.gz', move_path)
+        shutil.move(f'../season1_features/4_winner/{feature_name}.gz', move_path)
     except FileNotFoundError:
         print(f'FileNotFound. : {feature_name}.gz')
         pass
