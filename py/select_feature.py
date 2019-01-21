@@ -79,13 +79,13 @@ def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
         path_list = []
 
         for path in tmp_list:
-            path_list.append(path.replace('.0', '_0'))
+            path_list.append(path)
 
         for feature in best_feature:
-            move_path = [path for path in path_list if path.count(feature[:7]) and path.count(feature[9:]) and feature not in ignore_list]
+            move_path = [path for path in path_list if path.count(feature) and path.count(feature) and feature not in ignore_list]
             for move in move_path:
                 try:
-                    shutil.move(move.replace('_0_', '.0_'), second_path)
+                    shutil.move(move, second_path)
                 except FileNotFoundError:
                     logger.info(f'FileNotFoundError: {feature}')
                 except shutil.Error:
@@ -113,14 +113,11 @@ def move_to_use():
     done_list = []
     for feature in best_feature:
         for path in path_list:
-            if path.replace('.0', '_0').count(feature[:7]) and path.replace('.0', '_0').count(feature[9:]):
+            if path.count(feature[3:]):
                 try:
                     shutil.move(path, win_path)
-                    filename = re.search(r'/([^/.]*).gz', path.replace('.0', '_0')).group(1)
-                    if filename.count('train'):
-                        done_list.append(filename[14:])
-                    elif filename.count('test'):
-                        done_list.append(filename[13:])
+                    filename = re.search(r'/([^/.]*).gz', path).group(1)
+                    done_list.append(filename)
                 except shutil.Error:
                     pass
                     #  shutil.move(path, gdrive_path)
@@ -129,7 +126,7 @@ def move_to_use():
                     #  shutil.move(path, gdrive_path)
 
     logger = logger_func()
-    best_feature = [f[8:] for f in best_feature]
+    best_feature = [f for f in best_feature]
 
     loss_list = set(list(best_feature)) - set(done_list)
     logger.info(f"Loss List:")

@@ -1,3 +1,4 @@
+fold=3
 fold=5
 #  params['num_threads'] = 34
 import sys
@@ -72,6 +73,7 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path)
+win_path_list += glob.glob('../features/5_tmp/*.gz')
 train_path_list = []
 test_path_list = []
 for path in win_path_list:
@@ -89,8 +91,9 @@ train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
-train_id = train[key].values
-test_id = test[key].values
+train_latest_id_list = np.load('../input/card_id_train_first_active_201712.npy')
+test_latest_id_list = np.load('../input/card_id_test_first_active_201712.npy')
+
 
 #========================================================================
 
@@ -111,6 +114,7 @@ if len(drop_list):
 
 # Valid Features
 feat_list = glob.glob('../features/1_first_valid/*.gz')
+feat_list = sorted(feat_list)
 train_feat_list = ['']
 test_feat_list = ['']
 
@@ -138,6 +142,9 @@ out_ids = train.loc[train.target<-30, key].values
 out_val = train.loc[train.target<-30, target].values
 #========================================================================
 
+cv_score_list = []
+df_pred = pd.DataFrame()
+
 for i, path in enumerate(zip(train_feat_list, test_feat_list)):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
@@ -146,19 +153,36 @@ for i, path in enumerate(zip(train_feat_list, test_feat_list)):
     if len(path[0])>0:
         train_path = path[0]
         test_path = path[1]
-        used_path += [path[0], path[1]]
+        if train_path[-7:] != test_path[-7:]:
+            print('Feature Sort is different.')
+            print(train_path, test_path)
+            sys.exit()
+        used_path += list(path).copy()
         train_feat = utils.get_filename(path=train_path, delimiter='gz')
-        train_feat = train_feat[14:]
+        train_feat = train_feat[15:]
         test_feat = utils.get_filename(path=test_path, delimiter='gz')
-        test_feat = test_feat[13:]
+        test_feat = test_feat[14:]
 
         try:
             train[train_feat] = utils.read_pkl_gzip(train_path)
             test[train_feat] = utils.read_pkl_gzip(test_path)
         except FileNotFoundError:
             continue
+        except ValueError:
+            continue
     else:
         train_feat = 'base'
+
+    # idを絞る
+    try:
+        tmp_train = train.loc[train[key].isin(train_latest_id_list), :]
+        tmp_test = test.loc[test[key].isin(test_latest_id_list), :]
+        fold_type='kfold'
+        kfold = False
+        all_id = False
+    except AttributeError:
+        all_id = True
+        pass
 
     logger.info(f'''
     #========================================================================
@@ -166,41 +190,85 @@ for i, path in enumerate(zip(train_feat_list, test_feat_list)):
     # Valid Feature: {train_feat}
     #========================================================================''')
 
-    #========================================================================
-    # Train & Prediction Start
-    #========================================================================
-    LGBM = LGBM.cross_prediction(
-        train=train
-        ,test=test
-        ,key=key
-        ,target=target
-        ,fold_type=fold_type
-        ,fold=fold
-        ,group_col_name=group_col_name
-        ,params=params
-        ,num_boost_round=num_boost_round
-        ,early_stopping_rounds=early_stopping_rounds
-        ,oof_flg=oof_flg
-        ,self_kfold=kfold
-    )
+    train.sort_index(axis=1, inplace=True)
+    test.sort_index(axis=1, inplace=True)
 
-    cv_score = LGBM.cv_score
-    cv_feim = LGBM.cv_feim
-    feature_num = len(LGBM.use_cols)
-    df_pred = LGBM.result_stack
+    try:
+        seed_list = [1208, 605, 328, 1222, 405][:int(sys.argv[4])]
+    except IndexError:
+        seed_list = [1208]
+    for seed in seed_list:
+        LGBM.seed = seed
+
+#========================================================================
+# Train & Prediction Start
+#========================================================================
+        if all_id:
+            LGBM = LGBM.cross_prediction(
+                train=train
+                ,test=test
+                ,key=key
+                ,target=target
+                ,fold_type=fold_type
+                ,fold=fold
+                ,group_col_name=group_col_name
+                ,params=params
+                ,num_boost_round=num_boost_round
+                ,early_stopping_rounds=early_stopping_rounds
+                ,oof_flg=oof_flg
+                ,self_kfold=kfold
+            )
+        else:
+            LGBM = LGBM.cross_prediction(
+                train=tmp_train
+                ,test=tmp_test
+                ,key=key
+                ,target=target
+                ,fold_type=fold_type
+                ,fold=fold
+                ,group_col_name=group_col_name
+                ,params=params
+                ,num_boost_round=num_boost_round
+                ,early_stopping_rounds=early_stopping_rounds
+                ,oof_flg=oof_flg
+            )
+
+        cv_score = LGBM.cv_score
+        cv_feim = LGBM.cv_feim
+        feature_num = len(LGBM.use_cols)
+
+        cv_score_list.append(cv_score)
+
+        if len(df_pred):
+            df_pred['prediction'] += LGBM.result_stack['prediction'].values
+        else:
+            df_pred = LGBM.result_stack
+
 
     if len(path[0])>0:
         train.drop(train_feat, axis=1, inplace=True)
         test.drop(train_feat, axis=1, inplace=True)
 
-    #========================================================================
-    # outlierに対するスコアを出す
-    out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
-    out_score = np.sqrt(mean_squared_error(out_val, out_pred))
-    #========================================================================
+    df_pred['prediction'] /= len(seed_list)
+    cv_score_mean = np.mean(cv_score_list)
+    logger.info(f'''
+#************************************************************************
+#========================================================================
+# CV SCORE AVG: {cv_score_mean}
+#========================================================================
+#************************************************************************ ''')
 
-    LGBM.val_score_list.append(cv_score)
-    LGBM.val_score_list.append(out_score)
+    # Result Summarize
+
+    if len(target)>150000:
+        #========================================================================
+        # outlierに対するスコアを出す
+        out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+        out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+        LGBM.val_score_list.append(out_score)
+        #========================================================================
+
+    LGBM.val_score_list.append(cv_score_mean)
     tmp = pd.Series(LGBM.val_score_list, name=f"{i}_{train_feat}")
     valid_list.append(tmp.copy())
     if i==0:
