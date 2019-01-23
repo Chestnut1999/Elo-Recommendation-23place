@@ -11,6 +11,7 @@
 # mkdir eda
 # touch output/py_train.py.log
 
+mkdir 0_base
 mkdir 1_first_valid 
 mkdir 2_second_valid 
 mkdir 3_third_valid 
