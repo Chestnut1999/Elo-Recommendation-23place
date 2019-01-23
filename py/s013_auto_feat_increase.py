@@ -1,5 +1,6 @@
 fold=3
 fold=5
+num_threads = -1
 import sys
 import pandas as pd
 
@@ -58,7 +59,7 @@ except NameError:
 if model_type=='lgb':
     params = params_elo()[1]
     params['learning_rate'] = learning_rate
-params['num_threads'] = 32
+params['num_threads'] = num_threads
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -86,8 +87,8 @@ except IndexError:
     pass
 
 #========================================================================
-#  train_latest_id_list = np.load('../input/card_id_train_first_active_201711.npy')
-#  test_latest_id_list = np.load('../input/card_id_test_first_active_201711.npy')
+#  train_latest_id_list = np.load('../input/card_id_train_first_active_201712.npy')
+#  test_latest_id_list = np.load('../input/card_id_test_first_active_201712.npy')
 #========================================================================
 
 #========================================================================
@@ -157,37 +158,24 @@ while len(valid_feat_list)>1:
         no_update_cnt = 0
 
         if len(path)>0:
-        #  if len(path[0])>0:
-            train_path = path
-            #  train_path = path[0]
-            #  test_path = path[1]
-            #  if train_path[-7:] != test_path[-7:]:
-                #  print('Feature Sort is different.')
-                #  print(train_path, test_path)
-                #  sys.exit()
             used_path += list(path).copy()
-            train_feat = utils.get_filename(path=train_path, delimiter='gz')
-            train_feat = train_feat[14:]
-            #  test_feat = utils.get_filename(path=test_path, delimiter='gz')
-            #  test_feat = test_feat[14:]
+            valid_feat = utils.get_filename(path=path, delimiter='gz')
 
             # 検証するFeatureをデータセットに追加
             try:
-                train[train_feat] = utils.read_pkl_gzip(train_path)
-                #  test[train_feat] = utils.read_pkl_gzip(test_path)
+                train[valid_feat] = utils.read_pkl_gzip(path)[:len(base_train)]
             except FileNotFoundError:
                 continue
             except ValueError:
                 continue
         else:
-            train_feat = 'base'
-            train_path = 'base_path'
-            #  test_path = 'base_path'
+            valid_feat = 'base'
+            path = 'base_path'
 
         # idを絞る
         try:
-            tmp_train = train.loc[train[key].isin(train_latest_id_list), :]
-            #  tmp_test = test.loc[test[key].isin(test_latest_id_list), :]
+            tmp_train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+            #  tmp_test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
             fold_type='kfold'
             kfold = False
             all_id = False
@@ -201,7 +189,7 @@ while len(valid_feat_list)>1:
         logger.info(f'''
 #========================================================================
 # No: {i}/{len(valid_feat_list)-1}
-# Valid Feature: {train_feat}
+# Valid Feature: {valid_feat}
 #========================================================================''')
 
 
@@ -260,18 +248,28 @@ while len(valid_feat_list)>1:
             if cv_score > base_cv_score:
                 no_update_cnt += 1
 
-            # 半数以上のCVが更新されなかったら、途中でやめる
-            if no_update_cnt > int(len(seed_list)/2):
-                break
-
-
-        if len(path)>0:
-            train.drop(train_feat, axis=1, inplace=True)
-            #  test.drop(train_feat, axis=1, inplace=True)
+            logger.info(f'''
+#========================================================================
+# CV: {cv_score} | Base CV: {base_cv_score}
+# Update: {cv_score<base_cv_score}
+# No Update Count: {no_update_cnt}
+#========================================================================
+''')
 
             # 半数以上のCVが更新されなかったら、途中でやめる
             if no_update_cnt >= int(len(seed_list)/2):
+                logger.info(f'''
+#========================================================================
+# Not Update Over Half Seed: {no_update_cnt}>{int(len(seed_list)/2)}
+#========================================================================
+''')
                 continue
+
+
+        if path != 'base_path':
+            train.drop(valid_feat, axis=1, inplace=True)
+            #  test.drop(valid_feat, axis=1, inplace=True)
+
 
         if len(target)>70000:
             df_pred['prediction'] /= len(seed_list)
@@ -282,7 +280,7 @@ while len(valid_feat_list)>1:
 #========================================================================
 # CV Score Avg : {cv_score_mean} | Base Score: {base_cv_score}
 # Score Update : {score_update}
-# Valid Feature: {train_feat}
+# Valid Feature: {valid_feat}
 #========================================================================
 ''')
 
@@ -304,9 +302,9 @@ while len(valid_feat_list)>1:
         # 結果ファイルの作成
         LGBM.val_score_list.append(cv_score_mean)
         if i:
-            feat_name = f"{i}_{train_feat}"
+            feat_name = f"{i}_{valid_feat}"
         else:
-            feat_name = f"{train_feat}"
+            feat_name = f"{valid_feat}"
         tmp = pd.Series(LGBM.val_score_list, name=feat_name)
         valid_list.append(tmp.copy())
         tmp_valid_list.append(tmp.copy())
@@ -314,7 +312,7 @@ while len(valid_feat_list)>1:
             base_valid = tmp.copy()
             base_cv_score = cv_score_mean
 
-        train_used_paths.append(train_path)
+        train_used_paths.append(path)
         #  test_used_paths.append(test_path)
         #========================================================================
 
@@ -367,7 +365,6 @@ while len(valid_feat_list)>1:
 
     # 検証するFeature Listの初期化
     valid_feat_list = ['']
-    #  test_feat_list = ['']
 
     # Base Scoreを更新したFeatureがなければBreak
     if len(candidates)==0:

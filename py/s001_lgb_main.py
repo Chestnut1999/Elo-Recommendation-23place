@@ -13,6 +13,7 @@ target = 'target'
 ignore_list = [key, target, 'merchant_id', 'column_0']
 
 win_path = f'../features/4_winner/*.gz'
+#  win_path = f'../model/old_201712/*.gz'
 stack_name='en_route'
 fname=''
 xray=False
@@ -68,10 +69,10 @@ if model_type=='lgb':
     params = params_elo()[1]
     params['learning_rate'] = learning_rate
 
-try:
-    params['num_threads'] = int(sys.argv[5])
-except IndexError:
-    params['num_threads'] = -1
+#  try:
+#      params['num_threads'] = int(sys.argv[6])
+#  except IndexError:
+#      params['num_threads'] = -1
 
 
 # Best outlier fit LB3.690
@@ -103,7 +104,6 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 #========================================================================
 # Data Load
 base_path = glob.glob('../features/0_base/*.gz')
-win_path = '../features/4_winner/*.gz'
 base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path) + glob.glob('base_path')
 tmp_path_list = glob.glob('../features/5_tmp/*.gz')
@@ -120,27 +120,30 @@ test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=
 
 #========================================================================
 # card_id list by first active month
-#  train_latest_id_list = np.load('../input/card_id_train_first_active_201711.npy')
-#  test_latest_id_list = np.load('../input/card_id_test_first_active_201711.npy')
-#  train = train.loc[train[key].isin(train_latest_id_list), :]
-#  test = test.loc[test[key].isin(test_latest_id_list), :]
-#  submit = []
+try:
+    train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[5]}.npy')
+    test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[5]}.npy')
+    train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+    test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
+    submit = []
+except IndexError:
+    pass
 #========================================================================
 
 
 #========================================================================
 # FM STACK
-try:
-    if int(sys.argv[6])>0:
-        fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
-        train['fm_keras'] = fm_feat[:len(train)]
-        test['fm_keras'] = fm_feat[len(train):]
+#  try:
+#      if int(sys.argv[6])>0:
+#          fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
+#          train['fm_keras'] = fm_feat[:len(train)]
+#          test['fm_keras'] = fm_feat[len(train):]
 
-        fm_feat = utils.read_pkl_gzip('../stack/0112_234_stack_keras_lr0_72feats_1seed_128.0batch_OUT_CV0-688061879169805_LB.gz')['prediction'].values
-        train['fm_keras_2'] = fm_feat[:len(train)]
-        test['fm_keras_2'] = fm_feat[len(train):]
-except IndexError:
-    pass
+#          fm_feat = utils.read_pkl_gzip('../stack/0112_234_stack_keras_lr0_72feats_1seed_128.0batch_OUT_CV0-688061879169805_LB.gz')['prediction'].values
+#          train['fm_keras_2'] = fm_feat[:len(train)]
+#          test['fm_keras_2'] = fm_feat[len(train):]
+#  except IndexError:
+#      pass
 #========================================================================
 
 
@@ -196,6 +199,7 @@ from sklearn.model_selection import StratifiedKFold
 seed_pred = np.zeros(len(test))
 cv_list = []
 iter_list = []
+model_list = []
 for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
@@ -254,6 +258,21 @@ for i, seed in enumerate(seed_list):
         LGBM.cv_feim.columns = [col if col.count('feature') else f"{col}_{seed}" for col in LGBM.cv_feim.columns]
         cv_feim = cv_feim.merge(LGBM.cv_feim, how='inner', on='feature')
         df_pred = df_pred.merge(LGBM.result_stack.rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
+
+    try:
+        sys.argv[6]
+        model_list += LGBM.fold_model_list
+        #  utils.to_pkl_gzip(obj=LGBM.fold_model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_mode_list')
+    except IndexError:
+        pass
+
+try:
+    sys.argv[6]
+    utils.to_pkl_gzip(obj=model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_model_list_old')
+    #  utils.to_pkl_gzip(obj=model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_model_list')
+    pd.Series(LGBM.use_cols, name='use_cols').to_csv( f'../model/201712/{start_time[4:8]}_elo_first_month201712_fold_model_use_cols.csv',  index=False)
+except IndexError:
+    pass
 
 #========================================================================
 # Result

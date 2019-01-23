@@ -72,11 +72,11 @@ test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=
 
 #========================================================================
 # card_id list by first active month
-#  train_latest_id_list = np.load('../input/card_id_train_first_active_201711.npy')
-#  test_latest_id_list = np.load('../input/card_id_test_first_active_201711.npy')
-#  train = train.loc[train[key].isin(train_latest_id_list), :]
-#  test = test.loc[test[key].isin(test_latest_id_list), :]
-#  submit = []
+train_latest_id_list = np.load('../input/card_id_train_first_active_201711.npy')
+test_latest_id_list = np.load('../input/card_id_test_first_active_201711.npy')
+train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
+submit = []
 #========================================================================
 
 #========================================================================
@@ -114,8 +114,8 @@ kfold = list(folds.split(train, y))
 
 use_cols = [col for col in train.columns if col not in ignore_list]
 valid_feat_list = list(np.random.choice(use_cols, len(use_cols)))
-best_valid_list = [100, 100, 100, 100, 100]
-best_cv_list = [100, 100, 100, 100, 100]
+best_valid_list = [100, 100, 100, 100, 100][:int(sys.argv[4])]
+best_cv_list = [100, 100, 100, 100, 100][:int(sys.argv[4])]
 
 valid_log_list = []
 oof_log = train[[key, target]]
@@ -149,12 +149,11 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
     logger.info(f'''
 #========================================================================
 # Valid{i}/{len(valid_feat_list)} Start!!
-# Valid Feature: {valid_feat} | Feature Num  : {len(valid_cols)}
-# Base Valid 1 : {best_cv_list[0]}
-# Base Valid 2 : {best_cv_list[1]}
-# Base Valid 3 : {best_cv_list[2]}
-# Base Valid 4 : {best_cv_list[3]}
-# Base Valid 5 : {best_cv_list[4]}
+# Valid Feature: {valid_feat} | Feature Num  : {len(valid_cols)} ''')
+    for i in range(len(best_cv_list)):
+        logger.info(f'''
+# Base Valid {i+1} : {best_cv_list[i]} ''')
+    logger.info(f'''
 #========================================================================''')
 
     cv_score_list = []
@@ -213,6 +212,7 @@ for i, valid_feat in enumerate([''] + valid_feat_list):
     if i==0:
         best_cv_list = cv_score_list
         all_score_list.append(cv_score_avg)
+        num_list.append(len(all_score_list))
         continue
 
     # move feature

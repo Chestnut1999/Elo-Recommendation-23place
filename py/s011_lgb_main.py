@@ -12,7 +12,8 @@ key = 'card_id'
 target = 'target'
 ignore_list = [key, target, 'merchant_id', 'column_0']
 
-win_path = f'../season1_features/4_winner/*.gz'
+win_path = f'../features/4_winner/*.gz'
+win_path = f'../model/old_201711/*.gz'
 stack_name='en_route'
 fname=''
 xray=False
@@ -99,12 +100,12 @@ if num_leaves>40:
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 
-#  ========================================================================
+# ========================================================================
 #  Data Load
 base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path)
 # tmp_path_listには検証中のfeatureを入れてある
-tmp_path_list = glob.glob('../season1_features/5_tmp/*.gz')
+tmp_path_list = glob.glob('../features/5_tmp/*.gz')
 win_path_list += tmp_path_list
 
 train_path_list = []
@@ -124,36 +125,20 @@ train = pd.concat([base_train, train], axis=1)
 test = pd.concat(test_feature_list, axis=1)
 test = pd.concat([base_test, test], axis=1)
 
+train_test = pd.concat([train, test], axis=0)
+for col in train_test.columns:
+    if col in ignore_list:continue
+    utils.to_pkl_gzip(obj=train_test[col].values, path=f'../model/old_201711/{col}')
+sys.exit()
 
-try:
-    if int(sys.argv[6])>0:
-        fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
-        train['fm_keras'] = fm_feat[:len(train)]
-        test['fm_keras'] = fm_feat[len(train):]
-
-        fm_feat = utils.read_pkl_gzip('../stack/0112_234_stack_keras_lr0_72feats_1seed_128.0batch_OUT_CV0-688061879169805_LB.gz')['prediction'].values
-        train['fm_keras_2'] = fm_feat[:len(train)]
-        test['fm_keras_2'] = fm_feat[len(train):]
-except IndexError:
-    pass
-
-last_pred = False
-if last_pred:
-    last1_feat = utils.read_pkl_gzip('../stack/0114_215_stack_lgb_lr0.01_179feats_1seed_31leaves_iter1069_OUT30.7802_CV3-701340261781586_LB.gz')['prediction'].values
-    train['last1_pred'] = last1_feat[:len(train)]
-    test['last1_pred'] = last1_feat[len(train):]
-
-    last2_feat = utils.read_pkl_gzip('../stack/0114_194_stack_lgb_lr0.01_158feats_1seed_31leaves_iter458_OUT31.1844_CV3-7562439959526808_LB.gz')['prediction'].values
-    train['last2_pred'] = last2_feat[:len(train)]
-    test['last2_pred'] = last2_feat[len(train):]
-
-    last3_feat = utils.read_pkl_gzip('../stack/0114_214_stack_lgb_lr0.01_141feats_1seed_31leaves_iter434_OUT31.3720_CV3-7707044153902585_LB.gz')['prediction'].values
-    train['last3_pred'] = last3_feat[:len(train)]
-    test['last3_pred'] = last3_feat[len(train):]
-
-    last4_feat = utils.read_pkl_gzip('../stack/0114_214_stack_lgb_lr0.01_149feats_1seed_31leaves_iter311_OUT31.8093_CV3-7945856392534916_LB.gz')['prediction'].values
-    train['last4_pred'] = last4_feat[:len(train)]
-    test['last4_pred'] = last4_feat[len(train):]
+#========================================================================
+# card_id list by first active month
+train_latest_id_list = np.load('../input/card_id_train_first_active_201712.npy')
+test_latest_id_list = np.load('../input/card_id_test_first_active_201712.npy')
+train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
+submit = []
+#========================================================================
 
 
 if out_part=='part':

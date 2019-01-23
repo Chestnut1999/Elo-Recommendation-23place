@@ -68,18 +68,18 @@ df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 #  test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
 test = []
-try:
-    sys.argv[5]
-    train = train.sample(80000).reset_index(drop=True)
-except IndexError:
-    pass
+#  try:
+#      sys.argv[5]
+#      train = train.sample(80000).reset_index(drop=True)
+#  except IndexError:
+#      pass
 
 #========================================================================
 
 #========================================================================
 # card_id list by first active month
-#  train_latest_id_list = np.load('../input/card_id_train_first_active_201711.npy')
-#  test_latest_id_list = np.load('../input/card_id_test_first_active_201711.npy')
+#  train_latest_id_list = np.load('../input/card_id_train_first_active_201712.npy')
+#  test_latest_id_list = np.load('../input/card_id_test_first_active_201712.npy')
 #  train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
 #  test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
 #========================================================================
@@ -227,11 +227,11 @@ while len(valid_feat_list):
 
         elif cv_score_avg < np.mean(best_cv_list):
             logger.info(f"""
-# ==============================
+# ============================================================
 # Score Update!!
-# Decrease :{valid_feat}
-# Score    : {cv_score_avg}
-# ==============================
+# Decrease : {valid_feat}
+# Score    : {cv_score_avg} | Base: {np.mean(best_cv_list)}
+# ============================================================
             """)
             #  best_cv_list = score_list
             all_score_list.append(cv_score_avg)
@@ -250,6 +250,13 @@ while len(valid_feat_list):
 
         else:
             all_score_list.append(np.nan)
+            logger.info(f"""
+# ============================================================
+# Not Score Update...
+# Decrease : {valid_feat}
+# Score    : {cv_score_avg} | Base: {np.mean(best_cv_list)}
+# ============================================================
+            """)
 
         num_list.append(len(all_score_list))
 
