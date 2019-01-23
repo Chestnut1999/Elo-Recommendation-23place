@@ -7,6 +7,7 @@ __pycache__/
 season1_features/
 season2_features/
 season3_features/
+model/
 input/
 output/
 valid/
