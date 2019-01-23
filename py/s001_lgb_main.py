@@ -114,6 +114,7 @@ feature_list = utils.parallel_load_data(path_list=win_path_list)
 df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
+y = train[target].values
 
 #========================================================================
 # card_id list by first active month
@@ -323,7 +324,19 @@ logger.info(f'''
 #========================================================================
 # Part of card_id Score
 try:
-    int(sys.argv[2][:2])
+    if int(sys.argv[2][:2])>0:
+        if len(train)>150000:
+            for i in range(201701, 201713, 1):
+                train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
+
+                part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
+                y_train = part_train[target].values
+                y_pred = part_train['prediction'].values
+                part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+                logger.info(f'''
+                #========================================================================
+                # First Month {i} of Score: {part_score} | N: {len(train_latest_id_list)}
+                #========================================================================''')
 except ValueError:
     if len(train)>150000:
         for i in range(201701, 201713, 1):
@@ -366,6 +379,8 @@ except IndexError:
             else:
                 out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
             out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+        else:
+            out_score = 0
     else:
         out_score = 0
 
