@@ -13,7 +13,7 @@ target = 'target'
 ignore_list = [key, target, 'merchant_id', 'column_0']
 
 win_path = f'../features/4_winner/*.gz'
-#  win_path = f'../model/old_201712/*.gz'
+win_path = f'../model/old_201711/*.gz'
 stack_name='en_route'
 fname=''
 xray=False
@@ -46,7 +46,6 @@ import datetime
 import glob
 import gc
 import os
-from sklearn.metrics import mean_squared_error
 HOME = os.path.expanduser('~')
 
 sys.path.append(f'{HOME}/kaggle/data_analysis/model')
@@ -69,14 +68,14 @@ if model_type=='lgb':
     params = params_elo()[1]
     params['learning_rate'] = learning_rate
 
-#  try:
-#      params['num_threads'] = int(sys.argv[6])
-#  except IndexError:
-#      params['num_threads'] = -1
+try:
+    params['num_threads'] = int(sys.argv[5])
+except IndexError:
+    params['num_threads'] = -1
 
 
 # Best outlier fit LB3.690
-#  params['max_depth'] = 7
+#  params['max_depth'] = 2
 #  params['colsample_bytree'] = 0.6
 #  num_boost_round = 100000
 #  num_leaves = 4
@@ -101,49 +100,44 @@ if num_leaves>40:
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 
-#========================================================================
-# Data Load
-base_path = glob.glob('../features/0_base/*.gz')
+# ========================================================================
+#  Data Load
 base = utils.read_df_pkl('../input/base*')
-win_path_list = glob.glob(win_path) + glob.glob('base_path')
+win_path_list = glob.glob(win_path)
+# tmp_path_listには検証中のfeatureを入れてある
 tmp_path_list = glob.glob('../features/5_tmp/*.gz')
 win_path_list += tmp_path_list
 
-base = utils.read_df_pkl('../input/base*')
+train_path_list = []
+test_path_list = []
+for path in win_path_list:
+    if path.count('train'):
+        train_path_list.append(path)
+    elif path.count('test'):
+        test_path_list.append(path)
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
-feature_list = utils.parallel_load_data(path_list=win_path_list)
-df_feat = pd.concat(feature_list, axis=1)
-train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
-test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
+train_feature_list = utils.parallel_load_data(path_list=train_path_list)
+test_feature_list = utils.parallel_load_data(path_list=test_path_list)
+train = pd.concat(train_feature_list, axis=1)
+train = pd.concat([base_train, train], axis=1)
+test = pd.concat(test_feature_list, axis=1)
+test = pd.concat([base_test, test], axis=1)
+
+train_test = pd.concat([train, test], axis=0)
+for col in train_test.columns:
+    if col in ignore_list:continue
+    utils.to_pkl_gzip(obj=train_test[col].values, path=f'../model/old_201711/{col}')
+sys.exit()
 
 #========================================================================
 # card_id list by first active month
-try:
-    train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[5]}.npy')
-    test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[5]}.npy')
-    train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
-    test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
-    submit = []
-except IndexError:
-    pass
-#========================================================================
-
-
-#========================================================================
-# FM STACK
-#  try:
-#      if int(sys.argv[6])>0:
-#          fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
-#          train['fm_keras'] = fm_feat[:len(train)]
-#          test['fm_keras'] = fm_feat[len(train):]
-
-#          fm_feat = utils.read_pkl_gzip('../stack/0112_234_stack_keras_lr0_72feats_1seed_128.0batch_OUT_CV0-688061879169805_LB.gz')['prediction'].values
-#          train['fm_keras_2'] = fm_feat[:len(train)]
-#          test['fm_keras_2'] = fm_feat[len(train):]
-#  except IndexError:
-#      pass
+train_latest_id_list = np.load('../input/card_id_train_first_active_201712.npy')
+test_latest_id_list = np.load('../input/card_id_test_first_active_201712.npy')
+train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
+submit = []
 #========================================================================
 
 
@@ -199,7 +193,6 @@ from sklearn.model_selection import StratifiedKFold
 seed_pred = np.zeros(len(test))
 cv_list = []
 iter_list = []
-model_list = []
 for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
@@ -211,18 +204,11 @@ for i, seed in enumerate(seed_list):
     #      params['colsample_bytree'] = 0.7401342964627846
     #      params['min_child_samples'] = 61
 
-    if len(train)>150000:
-        train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold = folds.split(train,train['outliers'].values)
-        train.drop('outliers', axis=1, inplace=True)
-    else:
-        kfold = False
-        fold_type = 'kfold'
+    train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+    folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    kfold = folds.split(train,train['outliers'].values)
+    train.drop('outliers', axis=1, inplace=True)
 #========================================================================
-
-    train.sort_index(axis=1, inplace=True)
-    test.sort_index(axis=1, inplace=True)
 
 #========================================================================
 # Train & Prediction Start
@@ -259,46 +245,12 @@ for i, seed in enumerate(seed_list):
         cv_feim = cv_feim.merge(LGBM.cv_feim, how='inner', on='feature')
         df_pred = df_pred.merge(LGBM.result_stack.rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
 
-    try:
-        sys.argv[6]
-        model_list += LGBM.fold_model_list
-        #  utils.to_pkl_gzip(obj=LGBM.fold_model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_mode_list')
-    except IndexError:
-        pass
-
-try:
-    sys.argv[6]
-    utils.to_pkl_gzip(obj=model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_model_list_old')
-    #  utils.to_pkl_gzip(obj=model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_model_list')
-    pd.Series(LGBM.use_cols, name='use_cols').to_csv( f'../model/201712/{start_time[4:8]}_elo_first_month201712_fold_model_use_cols.csv',  index=False)
-except IndexError:
-    pass
-
 #========================================================================
 # Result
+#========================================================================
 test_pred = seed_pred / len(seed_list)
 cv_score = np.mean(cv_list)
 iter_avg = np.int(np.mean(iter_list))
-#========================================================================
-
-logger.info(f'''
-#========================================================================
-# {len(seed_list)}SEED CV SCORE AVG: {cv_score}
-#========================================================================''')
-
-
-#========================================================================
-# Part of card_id Score
-#  part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
-#  y_train = part_train[target].values
-#  y_pred = part_train['prediction'].values
-#  part_score = np.sqrt(mean_squared_error(y_train, y_pred))
-#  logger.info(f'''
-#  #========================================================================
-#  # Part of Card_id Score: {part_score}
-#  #========================================================================''')
-#========================================================================
-
 
 #========================================================================
 # STACKING
@@ -311,6 +263,7 @@ if len(stack_name)>0:
 
 if len(train[train[target]<-30])>0:
     # outlierに対するスコアを出す
+    from sklearn.metrics import mean_squared_error
     train.reset_index(inplace=True)
     out_ids = train.loc[train.target<-30, key].values
     out_val = train.loc[train.target<-30, target].values
@@ -323,14 +276,7 @@ else:
     out_score = 0
 
 # Save
-if len(stack_name)>0:
-    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
-
-# 不要なカラムを削除
-drop_feim_cols = [col for col in cv_feim.columns if col.count('importance_') or col.count('rank_')]
-cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
-drop_feim_cols = [col for col in cv_feim.columns if col.count('importance') and not(col.count('avg'))]
-cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
+utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
 cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
 
 #========================================================================
@@ -344,32 +290,27 @@ if len(submit)>0:
 #========================================================================
 # CV INFO
 
-if len(train)>150000:
+import re
+path_list = glob.glob('../log_submit/*CV*LB*.csv')
+path_list.append(submit_path)
+#  path_list_2 = glob.glob('../check_submit/*.csv')
+#  path_list += path_list_2
 
-    import re
-    path_list = glob.glob('../log_submit/01*CV*LB*.csv')
-    path_list.append(submit_path)
-    #  path_list_2 = glob.glob('../check_submit/*.csv')
-    #  path_list += path_list_2
+tmp_list = []
+path_list = list(set(path_list))
+for path in path_list:
+    tmp = pd.read_csv(path)
+    tmp_path = path.replace(".", '-')
+    cv = re.search(r'CV([^/.]*)_LB', tmp_path).group(1)[:-2].replace('-', '.')
+    lb = re.search(r'LB([^/.]*).csv', tmp_path).group(1).replace('-', '.')
+    tmp.rename(columns={'target':f"CV{cv[:9]}_LB{lb}"}, inplace=True)
+    tmp.set_index('card_id', inplace=True)
+    tmp_list.append(tmp.copy())
 
-    tmp_list = []
-    path_list = list(set(path_list))
-    for path in path_list:
-        tmp = pd.read_csv(path)
-        tmp_path = path.replace(".", '-')
-        cv = re.search(r'CV([^/.]*)_LB', tmp_path).group(1).replace('-', '.')
-        lb = re.search(r'LB([^/.]*).csv', tmp_path).group(1).replace('-', '.')
-        #  if lb<'3.690' and path!=submit_path:
-        #      continue
-        tmp.rename(columns={'target':f"CV{cv[:9]}_LB{lb}"}, inplace=True)
-        tmp.set_index('card_id', inplace=True)
-        tmp_list.append(tmp.copy())
+df = pd.concat(tmp_list, axis=1)
+df_corr = df.corr(method='pearson')
 
-    if len(tmp_list)>0:
-        df = pd.concat(tmp_list, axis=1)
-        df_corr = df.corr(method='pearson')
-
-        logger.info(f'''
+logger.info(f'''
 #========================================================================
 # OUTLIER FIT SCORE: {out_score}
 # SUBMIT CORRELATION:

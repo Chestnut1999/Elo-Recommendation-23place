@@ -4,6 +4,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+season1_features/
+season2_features/
+season3_features/
 input/
 output/
 valid/
@@ -16,7 +19,6 @@ log_submit/
 ensemble/
 other/
 .git/
-jpy/
 
 *.git
 *.yaml

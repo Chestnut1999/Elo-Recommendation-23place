@@ -12,7 +12,7 @@ win_path = f'../features/4_winner/*.gz'
 stack_name='outlier_classify'
 fname=''
 xray=False
-#  xray=True
+xray=True
 
 #========================================================================
 # argv[1] : model_type 
@@ -60,13 +60,6 @@ if model_type=='lgb':
     params = params_elo()[1]
     params['learning_rate'] = learning_rate
 
-#  Best outlier fit LB3.691
-params['subsample'] = 0.8757099996397999
-params['colsample_bytree'] = 0.7401342964627846
-params['num_leaves'] = 48
-params['min_child_samples'] = 61
-params['num_threads'] = 35
-
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -78,6 +71,7 @@ base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path)
 # tmp_path_listには検証中のfeatureを入れてある
 tmp_path_list = glob.glob('../features/5_tmp/*.gz')
+tmp_path_list = glob.glob('../season1_features/features/5_tmp/*.gz')
 win_path_list += tmp_path_list
 
 train_path_list = []
@@ -125,6 +119,11 @@ except IndexError:
 
 
 train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
+#  train[target] = train[target].map(lambda x: 1 if x>1.5 else 0)
+#  train = pd.read_csv('../features/loy_0_1.csv')
+#  train[target] = train[target].map(lambda x: 1 if x<1 else 0)
+
+
 metric = 'auc'
 params['objective'] = 'binary'
 params['metric'] = metric
@@ -136,9 +135,9 @@ oof_flg=True
 LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
 
 train, test, drop_list = LGBM.data_check(train=train, test=test, target=target)
-if len(drop_list):
-    train.drop(drop_list, axis=1, inplace=True)
-    test.drop(drop_list, axis=1, inplace=True)
+#  if len(drop_list):
+#      train.drop(drop_list, axis=1, inplace=True)
+#      test.drop(drop_list, axis=1, inplace=True)
 
 #========================================================================
 # seed_avg
@@ -148,6 +147,14 @@ for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
+
+    if i>=5:
+        #  Best outlier fit LB3.691
+        params['num_leaves'] = 48
+        params['subsample'] = 0.8757099996397999
+        params['colsample_bytree'] = 0.7401342964627846
+        params['min_child_samples'] = 61
+        params['num_threads'] = -1
 
 #========================================================================
 # Train & Prediction Start
@@ -227,7 +234,7 @@ if xray:
     result_xray = pd.DataFrame()
     N_sample = 200000
     max_point = 20
-    fold = 3
+    #  fold = 3
     for fold_num in range(fold):
         if fold_num==0:
             xray_obj = Xray_Cal(logger=logger, ignore_list=ignore_list)
