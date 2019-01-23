@@ -12,8 +12,6 @@ key = 'card_id'
 target = 'target'
 ignore_list = [key, target, 'merchant_id', 'column_0']
 
-win_path = f'../features/4_winner/*.gz'
-#  win_path = f'../model/old_201712/*.gz'
 stack_name='en_route'
 fname=''
 xray=False
@@ -21,25 +19,18 @@ xray=False
 submit = pd.read_csv('../input/sample_submission.csv')
 #  submit = []
 
-#========================================================================
-# argv[1] : model_type 
-# argv[2] : learning_rate
-# argv[3] : early_stopping_rounds
-#========================================================================
 
+model_type='lgb'
 try:
-    model_type=sys.argv[1]
-except IndexError:
-    model_type='lgb'
-try:
-    learning_rate = float(sys.argv[2])
+    learning_rate = float(sys.argv[1])
 except IndexError:
     learning_rate = 0.1
-try:
-    early_stopping_rounds = int(sys.argv[3])
-except IndexError:
-    early_stopping_rounds = 100
-num_boost_round = 10000
+early_stopping_rounds = 150
+num_boost_round = 5000
+#  try:
+#      num_threads = int(sys.argv[6])
+#  except IndexError:
+#      num_threads = -1
 
 import numpy as np
 import datetime
@@ -65,15 +56,8 @@ try:
 except NameError:
     logger=logger_func()
 
-if model_type=='lgb':
-    params = params_elo()[1]
-    params['learning_rate'] = learning_rate
-
-#  try:
-#      params['num_threads'] = int(sys.argv[6])
-#  except IndexError:
-#      params['num_threads'] = -1
-
+params = params_elo()[1]
+params['learning_rate'] = learning_rate
 
 # Best outlier fit LB3.690
 #  params['max_depth'] = 7
@@ -95,7 +79,6 @@ if num_leaves>40:
 #  params['boosting'] = 'dart'
 #  params['drop_rate'] = 0.05
 #  params['max_drop'] = 5
-#  params['min_child_samples'] = 10
 
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
@@ -103,14 +86,28 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 #========================================================================
 # Data Load
-base_path = glob.glob('../features/0_base/*.gz')
-base = utils.read_df_pkl('../input/base*')
-win_path_list = glob.glob(win_path) + glob.glob('base_path')
-tmp_path_list = glob.glob('../features/5_tmp/*.gz')
-win_path_list += tmp_path_list
+
+try:
+    if int(sys.argv[2])>0:
+        win_path = f'../model/2017{sys.argv[2]}/4_winner/*.gz'
+        tmp_path_list = glob.glob('../model/2017{sys.argv[2]}/5_tmp/*.gz')
+    else:
+        win_path = f'../features/4_winner/*.gz'
+        tmp_path_list = glob.glob('../features/5_tmp/*.gz')
+        if int(sys.argv[2])<0:
+            sys.argv[2] = int(sys.argv[2])*-1
+except ValueError:
+    if sys.argv[2]=='all':
+        win_path = f'../model/all/4_winner/*.gz'
+        tmp_path_list = glob.glob(f'../model/all/5_tmp/*.gz')
+    else:
+        win_path = f'../model/2017{sys.argv[2][:2]}/{sys.argv[2][2:]}/*.gz'
+        tmp_path_list = glob.glob(f'../model/2017{sys.argv[2][:2]}/5_tmp/*.gz')
 
 base = utils.read_df_pkl('../input/base*')
+win_path_list = glob.glob(win_path) + tmp_path_list
 
+base = utils.read_df_pkl('../input/base*')
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 feature_list = utils.parallel_load_data(path_list=win_path_list)
@@ -121,13 +118,32 @@ test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=
 #========================================================================
 # card_id list by first active month
 try:
-    train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[5]}.npy')
-    test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[5]}.npy')
+    if int(sys.argv[2][:2])>0:
+        train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2][:2]}.npy')
+        test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2][:2]}.npy')
+        pred_path = glob.glob(f'../model/2017{sys.argv[2][:2]}/stack/*')[0]
+        pred_col = 'pred'
+        pred_feat = utils.read_pkl_gzip(pred_path)
+        train[pred_col] = pred_feat[:len(train)]
+        train.loc[~train[key].isin(train_latest_id_list), target] = train.loc[~train[key].isin(train_latest_id_list), pred_col]
+        tmp_test = test.copy()
+        tmp_test[target] = pred_feat[len(train):]
+        train = pd.concat([train, tmp_test], axis=0).drop(pred_col, axis=1)
+        del tmp_test
+        gc.collect()
+        #  train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+        #  test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
+        #  submit = []
+except IndexError:
+    pass
+except ValueError:
+    pass
+except TypeError:
+    train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2]}.npy')
+    test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2]}.npy')
     train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
     test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
     submit = []
-except IndexError:
-    pass
 #========================================================================
 
 
@@ -170,10 +186,10 @@ elif out_part=='all':
 #========================================================================
 # LGBM Setting
 try:
-    argv4 = int(sys.argv[4])
-    seed_list = np.arange(argv4)
-    if argv4<=10:
-        seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005, 2019][:argv4]
+    argv3 = int(sys.argv[3])
+    seed_list = np.arange(argv3)
+    if argv3<=10:
+        seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005, 2019][:argv3]
 except IndexError:
     seed_list = [1208]
 metric = 'rmse'
@@ -260,17 +276,34 @@ for i, seed in enumerate(seed_list):
         df_pred = df_pred.merge(LGBM.result_stack.rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
 
     try:
-        sys.argv[6]
+        sys.argv[4]
         model_list += LGBM.fold_model_list
-        #  utils.to_pkl_gzip(obj=LGBM.fold_model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_mode_list')
     except IndexError:
         pass
 
 try:
-    sys.argv[6]
-    utils.to_pkl_gzip(obj=model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_model_list_old')
-    #  utils.to_pkl_gzip(obj=model_list, path=f'../model/201712/{start_time[4:8]}_elo_first_month201712_{len(seed_list)}seed_fold_model_list')
-    pd.Series(LGBM.use_cols, name='use_cols').to_csv( f'../model/201712/{start_time[4:8]}_elo_first_month201712_fold_model_use_cols.csv',  index=False)
+    sys.argv[4]
+    use_cols = LGBM.use_cols
+    base = utils.read_df_pkl('../input/base*')
+    base_train = base[~base[target].isnull()].reset_index(drop=True)
+    base_test = base[base[target].isnull()].reset_index(drop=True)
+    feature_list = utils.parallel_load_data(path_list=win_path_list)
+    df_feat = pd.concat(feature_list, axis=1)
+    train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
+    test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
+    train_test = pd.concat([train, test], axis=0)[use_cols]
+    y_train = train[target].values
+
+    pred = np.zeros(len(train_test))
+    for model in model_list:
+        pred += model.predict(train_test)
+    pred /= len(model_list)
+
+    y_pred = pred[:len(y_train)]
+    score = np.sqrt(mean_squared_error(y_train, y_pred))
+
+    utils.to_pkl_gzip(obj=pred, path=f'../model/2017{sys.argv[2][:2]}/stack/{start_time[4:13]}_elo_first_month2017{sys.argv[2]}_{len(seed_list)}seed_CV{str(score)[:6]}')
+    #  pd.Series(LGBM.use_cols, name='use_cols').to_csv( f'../model/2017{sys.argv[2][:2]}/stack/{start_time[4:8]}_elo_first_month2017{sys.argv[2]}_fold_model_use_cols.csv',  index=False)
 except IndexError:
     pass
 
@@ -289,14 +322,23 @@ logger.info(f'''
 
 #========================================================================
 # Part of card_id Score
-#  part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
-#  y_train = part_train[target].values
-#  y_pred = part_train['prediction'].values
-#  part_score = np.sqrt(mean_squared_error(y_train, y_pred))
-#  logger.info(f'''
-#  #========================================================================
-#  # Part of Card_id Score: {part_score}
-#  #========================================================================''')
+try:
+    int(sys.argv[2][:2])
+except ValueError:
+    if len(train)>150000:
+        for i in range(201701, 201713, 1):
+            train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
+
+            part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
+            y_train = part_train[target].values
+            y_pred = part_train['prediction'].values
+            part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+            logger.info(f'''
+            #========================================================================
+            # First Month {i} of Score: {part_score} | N: {len(train_latest_id_list)}
+            #========================================================================''')
+except TypeError:
+    pass
 #========================================================================
 
 
@@ -309,22 +351,30 @@ if len(stack_name)>0:
         df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
         df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
 
-if len(train[train[target]<-30])>0:
-    # outlierに対するスコアを出す
-    train.reset_index(inplace=True)
-    out_ids = train.loc[train.target<-30, key].values
-    out_val = train.loc[train.target<-30, target].values
-    if len(seed_list)==1:
-        out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
-    else:
-        out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
-    out_score = np.sqrt(mean_squared_error(out_val, out_pred))
-else:
+try:
+    sys.argv[4]
     out_score = 0
+except IndexError:
+    if len(train)>150000:
+        if len(train[train[target]<-30])>0:
+            # outlierに対するスコアを出す
+            train.reset_index(inplace=True)
+            out_ids = train.loc[train.target<-30, key].values
+            out_val = train.loc[train.target<-30, target].values
+            if len(seed_list)==1:
+                out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+            else:
+                out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
+            out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+    else:
+        out_score = 0
 
 # Save
-if len(stack_name)>0:
-    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
+try:
+    if int(sys.argv[2][:2])==0:
+        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
+except TypeError:
+    pass
 
 # 不要なカラムを削除
 drop_feim_cols = [col for col in cv_feim.columns if col.count('importance_') or col.count('rank_')]
@@ -335,16 +385,19 @@ cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rat
 
 #========================================================================
 # Submission
-if len(submit)>0:
-    submit[target] = test_pred
-    submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
-    submit.to_csv(submit_path, index=False)
+try:
+    if int(sys.argv[2][:2])==0:
+        submit[target] = test_pred
+        submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
+        submit.to_csv(submit_path, index=False)
+except TypeError:
+    sys.exit()
 #========================================================================
 
 #========================================================================
 # CV INFO
 
-if len(train)>150000:
+if int(sys.argv[2][:2])==0 and len(train)>150000:
 
     import re
     path_list = glob.glob('../log_submit/01*CV*LB*.csv')
@@ -375,45 +428,3 @@ if len(train)>150000:
 # SUBMIT CORRELATION:
 {df_corr[f'CV{str(cv_score)[:9]}_LB'].sort_values()}
 #========================================================================''')
-
-#========================================================================
-
-
-#========================================================================
-# X-RAYの計算と出力
-# Args:
-#     model    : 学習済のモデル
-#     train    : モデルの学習に使用したデータセット
-#     col_list : X-RAYの計算を行うカラムリスト。指定なしの場合、
-#                データセットの全カラムについて計算を行うが、
-#                計算時間を考えると最大30カラム程度を推奨。
-#========================================================================
-if xray:
-    # Squeeze card_id
-    id_list = pd.read_csv('../output/1229_elo_id_list_std001_max-5.csv')[key].values
-    train.reset_index(inplace=True)
-    train = train.loc[train[key].isin(id_list), :]
-    # ===
-
-    train.reset_index(inplace=True)
-    train = train[LGBM.use_cols]
-    result_xray = pd.DataFrame()
-    N_sample = 500000
-    max_point = 30
-    for fold_num in range(fold):
-        if fold_num==0:
-            xray_obj = Xray_Cal(logger=logger, ignore_list=ignore_list)
-        xray_obj.model = LGBM.fold_model_list[fold_num]
-        xray_obj, tmp_xray = xray_obj.get_xray(base_xray=train, col_list=train.columns, fold_num=fold_num, N_sample=N_sample, max_point=max_point, parallel=False)
-        tmp_xray.rename(columns={'xray':f'xray_{fold_num}'}, inplace=True)
-
-        if len(result_xray):
-            result_xray = result_xray.merge(tmp_xray.drop('N', axis=1), on=['feature', 'value'], how='inner')
-        else:
-            result_xray = tmp_xray.copy()
-        del tmp_xray
-        gc.collect()
-
-    xray_col = [col for col in result_xray.columns if col.count('xray')]
-    result_xray['xray_avg'] = result_xray[xray_col].mean(axis=1)
-    result_xray.to_csv(f'../output/{start_time[4:10]}_xray_{model_type}_CV{LGBM.cv_score}.csv', index=False)

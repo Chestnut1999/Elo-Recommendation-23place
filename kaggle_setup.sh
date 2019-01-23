@@ -21,3 +21,4 @@ mkdir 6_subset
 mkdir 7_escape
 mkdir 8_ensemble
 mkdir 9_gdrive
+mkdir stack
