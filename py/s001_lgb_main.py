@@ -88,21 +88,32 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 
 try:
+    # FMMのwinnerを使う時
     if int(sys.argv[2])>0:
         win_path = f'../model/2017{sys.argv[2]}/4_winner/*.gz'
         tmp_path_list = glob.glob('../model/2017{sys.argv[2]}/5_tmp/*.gz')
     else:
+    # features配下のwinnerを使う時
         win_path = f'../features/4_winner/*.gz'
         tmp_path_list = glob.glob('../features/5_tmp/*.gz')
         if int(sys.argv[2])<0:
             sys.argv[2] = int(sys.argv[2])*-1
 except ValueError:
+    # ALLのwinnerを使う時
     if sys.argv[2]=='all':
         win_path = f'../model/all/4_winner/*.gz'
         tmp_path_list = glob.glob(f'../model/all/5_tmp/*.gz')
     else:
-        win_path = f'../model/2017{sys.argv[2][:2]}/{sys.argv[2][2:]}/*.gz'
-        tmp_path_list = glob.glob(f'../model/2017{sys.argv[2][:2]}/5_tmp/*.gz')
+        # スードラベリングをするとき
+        if sys.argv[2][-2:]=='pl':
+            win_path = f'../model/2017{sys.argv[2][:2]}/{sys.argv[2][2:-2]}/*.gz'
+            tmp_path_list = glob.glob(f'../model/2017{sys.argv[2][:2]}/5_tmp/*.gz')
+        # スードラベリングをしないとき
+        else:
+            win_path = f'../model/2017{sys.argv[2][:2]}/{sys.argv[2][2:]}/*.gz'
+            #  tmp_path_list = glob.glob(f'../model/2017{sys.argv[2][:2]}/5_tmp/*.gz')
+            tmp_path_list = glob.glob(f'../features/exp/*.gz')
+
 
 base = utils.read_df_pkl('../input/base*')
 win_path_list = glob.glob(win_path) + tmp_path_list
@@ -122,29 +133,34 @@ try:
     if int(sys.argv[2][:2])>0:
         train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2][:2]}.npy')
         test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2][:2]}.npy')
-        pred_path = glob.glob(f'../model/2017{sys.argv[2][:2]}/stack/*')[0]
-        pred_col = 'pred'
-        pred_feat = utils.read_pkl_gzip(pred_path)
-        train[pred_col] = pred_feat[:len(train)]
-        train.loc[~train[key].isin(train_latest_id_list), target] = train.loc[~train[key].isin(train_latest_id_list), pred_col]
-        tmp_test = test.copy()
-        tmp_test[target] = pred_feat[len(train):]
-        train = pd.concat([train, tmp_test], axis=0).drop(pred_col, axis=1)
-        del tmp_test
-        gc.collect()
-        #  train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
-        #  test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
-        #  submit = []
+
+        if sys.argv[2][-2:]=='pl':
+            pred_path = glob.glob(f'../model/2017{sys.argv[2][:2]}/stack/*')[0]
+            pred_col = 'pred'
+            pred_feat = utils.read_pkl_gzip(pred_path)
+            train[pred_col] = pred_feat[:len(train)]
+            train.loc[~train[key].isin(train_latest_id_list), target] = train.loc[~train[key].isin(train_latest_id_list), pred_col]
+            tmp_test = test.copy()
+            tmp_test[target] = pred_feat[len(train):]
+            train = pd.concat([train, tmp_test], axis=0).drop(pred_col, axis=1)
+            del tmp_test
+            gc.collect()
+        else:
+            train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+            test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
+            submit = []
 except IndexError:
     pass
 except ValueError:
     pass
 except TypeError:
-    train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2]}.npy')
-    test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2]}.npy')
-    train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
-    test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
-    submit = []
+    print('TypeError')
+    sys.exit()
+    #  train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2]}.npy')
+    #  test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2]}.npy')
+    #  train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+    #  test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
+    #  submit = []
 #========================================================================
 
 
@@ -274,7 +290,7 @@ for i, seed in enumerate(seed_list):
         iter_list.append(LGBM.iter_avg)
         LGBM.cv_feim.columns = [col if col.count('feature') else f"{col}_{seed}" for col in LGBM.cv_feim.columns]
         cv_feim = cv_feim.merge(LGBM.cv_feim, how='inner', on='feature')
-        df_pred = df_pred.merge(LGBM.result_stack.rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
+        df_pred = df_pred.merge(LGBM.result_stack[[key, 'prediction']].rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
 
     try:
         sys.argv[4]
@@ -282,35 +298,55 @@ for i, seed in enumerate(seed_list):
     except IndexError:
         pass
 
+
+#========================================================================
+# STACKING
+if len(stack_name)>0:
+    logger.info(f'result_stack shape: {df_pred.shape}')
+    if len(seed_list)>1:
+        pred_cols = [col for col in df_pred.columns if col.count('predict')]
+        df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
+        df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
+#========================================================================
+
+
+#========================================================================
+# エキスパートモデルを作成した際、全体に対する予測値を出してStackingできるようにする
 try:
     sys.argv[4]
     use_cols = LGBM.use_cols
-    base = utils.read_df_pkl('../input/base*')
-    base_train = base[~base[target].isnull()].reset_index(drop=True)
-    base_test = base[base[target].isnull()].reset_index(drop=True)
-    feature_list = utils.parallel_load_data(path_list=win_path_list)
-    df_feat = pd.concat(feature_list, axis=1)
-    train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
-    test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
-    train_test = pd.concat([train, test], axis=0)[use_cols]
-    y_train = train[target].values
 
-    pred = np.zeros(len(train_test))
-    for model in model_list:
-        pred += model.predict(train_test)
-    pred /= len(model_list)
+    if sys.argv[2][-2:]=='pl':
+        pred = df_pred['pred_mean'].values
+        y_train = y
+    else:
+        # Reload Dataset
+        base = utils.read_df_pkl('../input/base*')
+        base_train = base[~base[target].isnull()].reset_index(drop=True)
+        base_test = base[base[target].isnull()].reset_index(drop=True)
+        feature_list = utils.parallel_load_data(path_list=win_path_list)
+        df_feat = pd.concat(feature_list, axis=1)
+        train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
+        test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
+        train_test = pd.concat([train, test], axis=0)[use_cols]
+        y_train = train[target].values
+
+        pred = np.zeros(len(train_test))
+        for model in model_list:
+            pred += model.predict(train_test)
+        pred /= len(model_list)
 
     y_pred = pred[:len(y_train)]
     score = np.sqrt(mean_squared_error(y_train, y_pred))
 
-    utils.to_pkl_gzip(obj=pred, path=f'../model/2017{sys.argv[2][:2]}/stack/{start_time[4:13]}_elo_first_month2017{sys.argv[2]}_{len(seed_list)}seed_CV{str(score)[:6]}')
+    utils.to_pkl_gzip(obj=pred, path=f'../model/2017{sys.argv[2][:2]}/stack/{start_time[4:13]}_elo_first_month2017{sys.argv[2]}_{len(seed_list)}seed_lr{learning_rate}_round{num_boost_round}_CV{str(score)[:6]}')
     #  pd.Series(LGBM.use_cols, name='use_cols').to_csv( f'../model/2017{sys.argv[2][:2]}/stack/{start_time[4:8]}_elo_first_month2017{sys.argv[2]}_fold_model_use_cols.csv',  index=False)
 except IndexError:
     pass
+#========================================================================
 
 #========================================================================
 # Result
-test_pred = seed_pred / len(seed_list)
 cv_score = np.mean(cv_list)
 iter_avg = np.int(np.mean(iter_list))
 #========================================================================
@@ -319,7 +355,6 @@ logger.info(f'''
 #========================================================================
 # {len(seed_list)}SEED CV SCORE AVG: {cv_score}
 #========================================================================''')
-
 
 #========================================================================
 # Part of card_id Score
@@ -331,7 +366,10 @@ try:
 
                 part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
                 y_train = part_train[target].values
-                y_pred = part_train['prediction'].values
+                if 'pred_mean' in list(part_train.columns):
+                    y_pred = part_train['pred_mean'].values
+                else:
+                    y_pred = part_train['prediction'].values
                 part_score = np.sqrt(mean_squared_error(y_train, y_pred))
                 logger.info(f'''
                 #========================================================================
@@ -354,15 +392,6 @@ except TypeError:
     pass
 #========================================================================
 
-
-#========================================================================
-# STACKING
-if len(stack_name)>0:
-    logger.info(f'result_stack shape: {df_pred.shape}')
-    if len(seed_list)>1:
-        pred_cols = [col for col in df_pred.columns if col.count('predict')]
-        df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
-        df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
 
 try:
     sys.argv[4]
@@ -402,6 +431,7 @@ cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rat
 # Submission
 try:
     if int(sys.argv[2][:2])==0:
+        test_pred = seed_pred / len(seed_list)
         submit[target] = test_pred
         submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
         submit.to_csv(submit_path, index=False)
