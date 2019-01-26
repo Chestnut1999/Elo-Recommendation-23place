@@ -25,20 +25,24 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 base = utils.read_df_pkl('../input/base_first*')
 path_list = glob.glob('../model/201712/stack/*.gz')
+path_list = ['../stack/num_check.gz']
 
 #========================================================================
 # First Month Group Score
-for ratio_1, ratio_2 in zip(np.arange(0.1, 1.0, 0.1), np.arange(0.9, 0.0, -0.1)):
+#  for ratio_1, ratio_2 in zip(np.arange(0.1, 1.0, 0.1), np.arange(0.9, 0.0, -0.1)):
+for i in range(1):
 
     base['prediction'] = 0
     for path in path_list:
-        if not(path.count('stack')) or not(path.count('')):continue
+        if path != 'check':continue
+        #  if not(path.count('stack')) or not(path.count('')):continue
         filename = re.search(r'/([^/.]*).gz', path).group(1)
         pred = utils.read_pkl_gzip(path)
-        if path.count('201712_all'):
-            base['prediction'] += pred * ratio_1
-        elif path.count('201712_org'):
-            base['prediction'] += pred * ratio_2
+        base['prediction'] = pred
+        #  if path.count('201712_all'):
+        #      base['prediction'] += pred * ratio_1
+        #  elif path.count('201712_org'):
+        #      base['prediction'] += pred * ratio_2
 
     #========================================================================
     # Part of card_id Score
@@ -53,9 +57,9 @@ for ratio_1, ratio_2 in zip(np.arange(0.1, 1.0, 0.1), np.arange(0.9, 0.0, -0.1))
         logger.info(f'''
         #========================================================================
         # First Month {i} of Score: {part_score} | N: {len(train_latest_id_list)}
-        # Ratio1: {ratio_1} | Ratio2: {ratio_2}
         #========================================================================''')
 #========================================================================
+        # Ratio1: {ratio_1} | Ratio2: {ratio_2}
 
 
 #  try:
