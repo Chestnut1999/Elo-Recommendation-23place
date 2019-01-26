@@ -15,7 +15,6 @@ except ValueError:
     outlier_thres = -30
 fm_feat_pl = sys.argv[2]
 
-#  num_threads = 32
 import sys
 import pandas as pd
 
@@ -32,7 +31,9 @@ fname=''
 model_type='lgb'
 learning_rate = 0.02
 early_stopping_rounds = 150
-num_boost_round = 100000
+num_boost_round = 75000
+#  num_threads = -1
+num_threads = 36
 
 import numpy as np
 import datetime
@@ -65,6 +66,7 @@ params['learning_rate'] = learning_rate
 num_leaves = 31
 #  num_leaves = 48
 params['num_leaves'] = num_leaves
+params['num_threads'] = num_threads
 if num_leaves>40:
     params['num_leaves'] = num_leaves
     params['subsample'] = 0.8757099996397999
@@ -400,6 +402,8 @@ try:
         base_test = base[base[target].isnull()].reset_index(drop=True)
         feature_list = utils.parallel_load_data(path_list=win_path_list)
         df_feat = pd.concat(feature_list, axis=1)
+
+        # concatはindexで結合されるので注意
         train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
         test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
         train_test = pd.concat([train, test], axis=0, ignore_index=True)[use_cols]
