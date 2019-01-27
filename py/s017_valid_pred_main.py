@@ -25,21 +25,25 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 base = utils.read_df_pkl('../input/base_first*')
 path_list = glob.glob('../ensemble/*.gz')
-path = '../stack/0127_120_stack_lgb_lr0.01_349feats_1seed_31leaves_iter3915_OUT0_CV1-139620018388889_LB.gz'
-#  path = '../ensemble/0112_123_stack_lgb_lr0.01_200feats_10seed_iter1121_OUT30.2024_CV3-649256498211181_LB3.687.gz'
-#  path = '../ensemble/0112_084_stack_lgb_lr0.01_200feats_10seed_OUT30.2199_CV3-649046125233803_LB3.687.gz'
+#  path = '../stack/0127_120_stack_lgb_lr0.01_349feats_1seed_31leaves_iter3915_OUT0_CV1-139620018388889_LB.gz'
+path_1 = '../ensemble/0112_123_stack_lgb_lr0.01_200feats_10seed_iter1121_OUT30.2024_CV3-649256498211181_LB3.687.gz'
+path_2 = '../ensemble/0112_084_stack_lgb_lr0.01_200feats_10seed_OUT30.2199_CV3-649046125233803_LB3.687.gz'
 
 #========================================================================
 # First Month Group Score
 #  for ratio_1, ratio_2 in zip(np.arange(0.1, 1.0, 0.1), np.arange(0.9, 0.0, -0.1)):
 base['prediction'] = 0
-#  if path != 'check':continue
-filename = re.search(r'/([^/.]*).gz', path.replace('.', '-')).group(1)
-pred = utils.read_pkl_gzip(path)
+#  filename = re.search(r'/([^/.]*).gz', path.replace('.', '-')).group(1)
+pred_1 = utils.read_pkl_gzip(path_1)
+pred_2 = utils.read_pkl_gzip(path_2)
 
 base.set_index('card_id', inplace=True)
-pred.set_index('card_id', inplace=True)
-base['prediction'] = pred['prediction']
+pred_1.set_index('card_id', inplace=True)
+base['pred_1'] = pred_1['prediction']
+base['pred_2'] = pred_2['prediction']
+base['prediction'] = (base['pred_1'] + base['pred_2']) / 2
+base['prediction'] = base['pred_1']
+#  base['prediction'] = base['pred_2']
 base.reset_index(inplace=True)
 
 #========================================================================

@@ -12,7 +12,7 @@ import utils
 # First Month別にFitさせるにあたり、データセットの分布を各First Monthに揃える
 # ========================================================================
 
-def make_fam_dist(base_fam, limit_diff_num, is_drop=False):
+def make_fam_dist(base_fam, multi, is_drop=False):
     #  base_fam = '2017-12'
     #  limit_diff_num = 5
 
@@ -71,15 +71,15 @@ def make_fam_dist(base_fam, limit_diff_num, is_drop=False):
 
     cnt_0_fam = df.loc[0.0, :][base_fam]
     cnt_0_all = df.loc[0.0, :]['all']
-    multi = int(cnt_0_all / cnt_0_fam)+1
+    #  multi = int(cnt_0_all / cnt_0_fam)+1
 
-    while True:
-        tmp = df.copy().dropna()
-        is_minus = arange_ratio(tmp, multi)
-        if is_minus:
-            multi -= 1
-            continue
-        break
+    #  while True:
+    #      tmp = df.copy().dropna()
+    #      is_minus = arange_ratio(tmp, multi)
+    #      if is_minus:
+    #          multi -= 1
+    #          continue
+    #      break
 
     print(f"multi: {multi}")
     df[base_fam] *= multi

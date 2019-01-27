@@ -1,4 +1,8 @@
 outlier_thres = -3
+#  base_limit = 40
+multi = 12
+fold=5
+num_threads = 34
 import sys
 import pandas as pd
 
@@ -18,11 +22,12 @@ submit = pd.read_csv('../input/sample_submission.csv')
 
 
 model_type='lgb'
-#  try:
-#      learning_rate = float(sys.argv[1])
-#  except ValueError:
-#      learning_rate = 0.01
-learning_rate = 0.02
+try:
+    learning_rate = float(sys.argv[1])
+    win_path = f'../features/4_winner/*.gz'
+except ValueError:
+    learning_rate = 0.01
+    win_path = sys.argv[1]
 #  learning_rate = 1
 early_stopping_rounds = 150
 num_boost_round = 20000
@@ -55,15 +60,15 @@ params['learning_rate'] = learning_rate
 
 # Best outlier fit LB3.690
 #  num_leaves = 4
-#  num_threads = 32
-num_leaves = 31
+#  num_leaves = 31
 #  num_leaves = 16
-#  num_leaves = 48
+num_leaves = 48
 params['num_leaves'] = num_leaves
 if num_leaves>40:
     params['num_leaves'] = num_leaves
     params['subsample'] = 0.8757099996397999
     params['colsample_bytree'] = 0.7401342964627846
+    #  params['colsample_bytree'] = 0.3
     params['min_child_samples'] = 61
 
 
@@ -72,9 +77,6 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 #========================================================================
 # Data Load
 
-win_path = f'../features/4_winner/*.gz'
-win_path = f'../model/201711/200lag_stack/*.gz'
-win_path = sys.argv[1]
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
 
 base = utils.read_df_pkl('../input/base_first*')
@@ -104,7 +106,6 @@ except IndexError:
 metric = 'rmse'
 #  metric = 'mse'
 params['metric'] = metric
-fold=5
 fold_type='self'
 #  fold_type='stratified'
 group_col_name=''
@@ -131,12 +132,14 @@ for i, seed in enumerate(seed_list):
     #========================================================================
     # 分布をその月に近づける。is_dropとlimit_diff_numで揺らぎを作る（外れ値が多くなる）
     base_fam = sys.argv[2]
-    limit_diff_num = 4 + i
+    #  limit_diff_num = base_limit + i
+    multi + i
     if i%3==1:
         is_drop=True
     else:
         is_drop=False
-    id_list = make_fam_dist(base_fam, limit_diff_num, is_drop=is_drop)
+        #  is_drop=True
+    id_list = make_fam_dist(base_fam, multi, is_drop=is_drop)
     #========================================================================
 
     # cross_predictionでkeyがset_indexされるので
@@ -179,7 +182,7 @@ for i, seed in enumerate(seed_list):
 
     # 2. プラスマイナスでOutlierの閾値を切って、プラス、マイナス別に分布が揃う様にKFoldを作る
     elif sys.argv[4]=='pmo':
-        if train[target].max()>-30:
+        if train[target].min()>-30:
             print(f"Max Target: {train[target].max()}. Don't Use Option: pmo")
             sys.exit()
 
@@ -250,6 +253,7 @@ for i, seed in enumerate(seed_list):
     elif sys.argv[4]=='fmpm':
 
         train.reset_index(drop=True, inplace=True)
+        train_latest_id_list = base_train[base_train['first_active_month']==base_fam][key].values
         fm_train = train[train[key].isin(train_latest_id_list)].reset_index(drop=True)
         plus  = fm_train[fm_train[target] >= 0]
         minus = fm_train[fm_train[target] <  0]
@@ -281,6 +285,11 @@ for i, seed in enumerate(seed_list):
 
         kfold = zip(trn_idx_list, val_idx_list)
 
+    elif sys.argv[4]=='out':
+        train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        kfold = list(folds.split(train,train['outliers'].values))
+        train.drop('outliers', axis=1, inplace=True)
     # 3. Default KFold
     else:
         kfold = False
@@ -410,14 +419,14 @@ else:
     out_score = 0
 
 # Save
-utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_FAM{base_fam}_FAMS{str(fam_score)[:7].replace('.', '-')}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
+utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_multi{multi}_val{sys.argv[4]}_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_FAM{base_fam}_FAMS{str(fam_score)[:7].replace('.', '-')}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
 
 # 不要なカラムを削除
 drop_feim_cols = [col for col in cv_feim.columns if col.count('importance_') or col.count('rank_')]
 cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
 drop_feim_cols = [col for col in cv_feim.columns if col.count('importance') and not(col.count('avg'))]
 cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
-cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_FAM{base_fam}_FAMS{str(fam_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
+cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_multi{multi}_val{sys.argv[4]}_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_FAM{base_fam}_FAMS{str(fam_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
 
 #========================================================================
 # Submission
@@ -425,7 +434,7 @@ try:
     if int(sys.argv[2])==0:
         test_pred = seed_pred / len(seed_list)
         submit[target] = test_pred
-        submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
+        submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_multi{multi}_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
         submit.to_csv(submit_path, index=False)
 except ValueError:
     pass
