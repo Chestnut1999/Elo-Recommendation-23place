@@ -24,43 +24,40 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 # Data Load
 base = utils.read_df_pkl('../input/base_first*')
-path_list = glob.glob('../model/201712/stack/*.gz')
-path_list = ['../stack/num_check.gz']
+path_list = glob.glob('../ensemble/*.gz')
+path = '../stack/0127_120_stack_lgb_lr0.01_349feats_1seed_31leaves_iter3915_OUT0_CV1-139620018388889_LB.gz'
+#  path = '../ensemble/0112_123_stack_lgb_lr0.01_200feats_10seed_iter1121_OUT30.2024_CV3-649256498211181_LB3.687.gz'
+#  path = '../ensemble/0112_084_stack_lgb_lr0.01_200feats_10seed_OUT30.2199_CV3-649046125233803_LB3.687.gz'
 
 #========================================================================
 # First Month Group Score
 #  for ratio_1, ratio_2 in zip(np.arange(0.1, 1.0, 0.1), np.arange(0.9, 0.0, -0.1)):
-for i in range(1):
+base['prediction'] = 0
+#  if path != 'check':continue
+filename = re.search(r'/([^/.]*).gz', path.replace('.', '-')).group(1)
+pred = utils.read_pkl_gzip(path)
 
-    base['prediction'] = 0
-    for path in path_list:
-        if path != 'check':continue
-        #  if not(path.count('stack')) or not(path.count('')):continue
-        filename = re.search(r'/([^/.]*).gz', path).group(1)
-        pred = utils.read_pkl_gzip(path)
-        base['prediction'] = pred
-        #  if path.count('201712_all'):
-        #      base['prediction'] += pred * ratio_1
-        #  elif path.count('201712_org'):
-        #      base['prediction'] += pred * ratio_2
+base.set_index('card_id', inplace=True)
+pred.set_index('card_id', inplace=True)
+base['prediction'] = pred['prediction']
+base.reset_index(inplace=True)
 
-    #========================================================================
-    # Part of card_id Score
-    for i in range(201701, 201713, 1):
-        train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
-
-        df_part = base.loc[base[key].isin(train_latest_id_list), :]
-        y_train = df_part[target].values
-        y_pred = df_part['prediction'].values
-        part_score = np.sqrt(mean_squared_error(y_train, y_pred))
-
-        logger.info(f'''
-        #========================================================================
-        # First Month {i} of Score: {part_score} | N: {len(train_latest_id_list)}
-        #========================================================================''')
 #========================================================================
-        # Ratio1: {ratio_1} | Ratio2: {ratio_2}
+# Part of card_id Score
+for i in range(201701, 201713, 1):
+    train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
 
+    df_part = base.loc[base[key].isin(train_latest_id_list), :]
+    y_train = df_part[target].values
+    y_pred = df_part['prediction'].values
+    y_pred = np.where(y_pred!=y_pred, 0, y_pred)
+    part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+
+    logger.info(f'''
+    #========================================================================
+    # First Month {i} of Score: {part_score} | N: {df_part.shape}/{len(train_latest_id_list)}
+    #========================================================================''')
+#========================================================================
 
 #  try:
 out_score = 0

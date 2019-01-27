@@ -154,6 +154,17 @@ try:
 
 
             train = pd.concat([train, tmp_test], axis=0, ignore_index=True).drop(pred_col, axis=1)
+
+            if dataset_type.count('past3'):
+                base = base[base['first_active_month'] <= f'2017-{fm_feat_pl[:2]}']
+                past3 = int(fm_feat_pl[:2]) - int(sys.argv[6])
+                fm_feat_pl = fm_feat_pl.replace('past3', f'past{sys.argv[6]}')
+                if past3<10:
+                    past3 = f'0{past3}'
+                base = base[base['first_active_month'] >  f'2017-{past3}']
+                train = train.merge(base[key].to_frame(), how='inner', on=key).reset_index(drop=True)
+                test = test.merge(base[key].to_frame(), how='inner', on=key).reset_index(drop=True)
+
             pl_length = len(train)
             del tmp_test
             gc.collect()
@@ -196,9 +207,8 @@ except TypeError:
 if dataset_type.count('dist'):
     max_train = train.loc[train[key].isin(train_latest_id_list), target].max()
     min_train = train.loc[train[key].isin(train_latest_id_list), target].min()
-    train = train[train[target]<=max_train]
-    train = train[train[target]>=min_train]
-
+    train = train[train[target]<=max_train].reset_index(drop=True)
+    train = train[train[target]>=min_train].reset_index(drop=True)
 
 #========================================================================
 # Loyalty PreProcessing
@@ -230,28 +240,7 @@ if 'first_active_month' in list(train.columns):
     train.drop('first_active_month', axis=1, inplace=True)
     test.drop('first_active_month', axis=1, inplace=True)
 train.reset_index(drop=True, inplace=True)
-y = train[target].values
-
-# Target Check
-#  y = np.round(y, 0)
-#  print(pd.Series(y).value_counts())
-#  sys.exit()
-
-#========================================================================
-# FM STACK
-#  try:
-#      if int(sys.argv[6])>0:
-#          fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
-#          train['fm_keras'] = fm_feat[:len(train)]
-#          test['fm_keras'] = fm_feat[len(train):]
-
-#          fm_feat = utils.read_pkl_gzip('../stack/0112_234_stack_keras_lr0_72feats_1seed_128.0batch_OUT_CV0-688061879169805_LB.gz')['prediction'].values
-#          train['fm_keras_2'] = fm_feat[:len(train)]
-#          test['fm_keras_2'] = fm_feat[len(train):]
-#  except IndexError:
-#      pass
-#========================================================================
-
+y = train.set_index(key)[target]
 
 
 #========================================================================
@@ -291,6 +280,11 @@ for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
+
+    if key not in train.columns:
+        train.reset_index(inplace=True)
+    if key not in test.columns:
+        test.reset_index(inplace=True)
 
     #  if i>=5:
     #      params['num_leaves'] = 48
@@ -449,10 +443,18 @@ try:
     if fm_feat_pl[-2:]=='pl':
         if int(fm_feat_pl[:2])<12:
             df_pred = base.merge(df_pred.drop(target, axis=1), how='inner', on=key)
-            pred = df_pred['pred_mean'].values
+
+            if 'pred_mean' in df_pred.columns:
+                pred = df_pred['pred_mean'].values
+            else:
+                pred = df_pred['prediction'].values
         else:
-            pred = df_pred['pred_mean'].values
-        y_train = y
+            if 'pred_mean' in df_pred.columns:
+                pred = df_pred['pred_mean'].values
+            else:
+                pred = df_pred['prediction'].values
+        y_train = y.loc[df_pred.iloc[:len(train), :][key].values]
+        y_pred = pred[:len(train)]
 
     else:
         # Reload Dataset
@@ -469,14 +471,15 @@ try:
 
         # First_Month CV
         fm_idx = list(train[train[key].isin(train_latest_id_list)].index)
-        y_train = train.iloc[fm_idx][target].values
+        y_train = train.loc[fm_idx][target].values
         pred = np.zeros(len(train_test))
         for model in model_list:
             pred += model.predict(train_test)
         pred /= len(model_list)
+        y_pred = pred[fm_idx]
 
-    y_pred = pred[fm_idx]
-    score = np.sqrt(mean_squared_error(np.where(y_train!=y_train, 0, y_train), y_pred))
+    #  score = np.sqrt(mean_squared_error(np.where(y_train!=y_train, 0, y_train), y_pred))
+    score = np.sqrt(mean_squared_error(y_train, y_pred))
 
     utils.to_pkl_gzip(obj=pred, path=f"../model/2017{fm_feat_pl[:2]}/stack/{start_time[4:13]}_elo_first_month2017{fm_feat_pl[:2]}_{fm_feat_pl[2:]}_{dataset_type}_{stack_name}_{len(seed_list)}seed_lr{str(learning_rate).replace('.', '-')}_round{num_boost_round}_CV{str(score)[:6].replace('.', '-')}")
     #  pd.Series(LGBM.use_cols, name='use_cols').to_csv( f'../model/2017{fm_feat_pl[:2]}/stack/{start_time[4:8]}_elo_first_month2017{fm_feat_pl}_fold_model_use_cols.csv',  index=False)
@@ -500,8 +503,8 @@ logger.info(f'''
 try:
     if pl_length>0 or fm_feat_pl=='all' or len(train)>150000:
         #  for i in range(201701, 201713, 1):
-        for i in range(201712, 201713, 1):
-            train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
+        for i in range(1):
+            #  train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
 
             part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
             y_train = part_train[target].values
@@ -513,7 +516,7 @@ try:
 
             logger.info(f'''
             #========================================================================
-            # First Month {i} of Score: {part_score} | N: {len(part_train)}
+            # First Month {fm_feat_pl[:2]} of Score: {part_score} | N: {len(part_train)}
             #========================================================================''')
 except ValueError:
     pass

@@ -1,8 +1,5 @@
-out_part = ['', 'part', 'all'][2]
-#  num_threads = 32
-num_leaves = 31
-#  num_leaves = 16
-#  num_leaves = 48
+out_part = ['', 'part', 'all'][0]
+outlier_thres = -3
 import sys
 import pandas as pd
 
@@ -24,14 +21,10 @@ submit = pd.read_csv('../input/sample_submission.csv')
 model_type='lgb'
 try:
     learning_rate = float(sys.argv[1])
-except IndexError:
-    learning_rate = 0.1
+except ValueError:
+    learning_rate = 0.01
 early_stopping_rounds = 150
 num_boost_round = 5000
-#  try:
-#      num_threads = int(sys.argv[6])
-#  except IndexError:
-#      num_threads = -1
 
 import numpy as np
 import datetime
@@ -43,7 +36,6 @@ HOME = os.path.expanduser('~')
 
 sys.path.append(f'{HOME}/kaggle/data_analysis/model')
 from params_lgbm import params_elo
-from pdp import Xray_Cal
 sys.path.append(f'{HOME}/kaggle/data_analysis')
 from model.lightgbm_ex import lightgbm_ex as lgb_ex
 
@@ -62,6 +54,10 @@ params['learning_rate'] = learning_rate
 
 # Best outlier fit LB3.690
 #  num_leaves = 4
+#  num_threads = 32
+num_leaves = 31
+#  num_leaves = 16
+#  num_leaves = 48
 params['num_leaves'] = num_leaves
 if num_leaves>40:
     params['num_leaves'] = num_leaves
@@ -75,37 +71,8 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 #========================================================================
 # Data Load
 
-try:
-    # FMMのwinnerを使う時
-    if int(sys.argv[2])>0:
-        win_path = f'../model/2017{sys.argv[2]}/4_winner/*.gz'
-        tmp_path_list = glob.glob('../model/2017{sys.argv[2]}/5_tmp/*.gz')
-    # features配下のwinnerを使う時
-    else:
-        win_path = f'../features/4_winner/*.gz'
-        tmp_path_list = glob.glob('../features/5_tmp/*.gz')
-        # features配下のセットを使いつつ、first_monthを絞りたい場合
-        if int(sys.argv[2])<0:
-            if int(sys.argv[2])<10:
-                sys.argv[2] = '0' + str(int(sys.argv[2])*-1)
-            else:
-                sys.argv[2] = str(int(sys.argv[2])*-1)
-except ValueError:
-    # ALLのwinnerを使う時
-    if sys.argv[2]=='all':
-        win_path = f'../model/all/4_winner/*.gz'
-        tmp_path_list = glob.glob(f'../model/all/5_tmp/*.gz')
-    else:
-        # スードラベリングをするとき
-        if sys.argv[2][-2:]=='pl':
-            win_path = f'../model/2017{sys.argv[2][:2]}/{sys.argv[2][2:-2]}/*.gz'
-            tmp_path_list = glob.glob(f'../model/2017{sys.argv[2][:2]}/5_tmp/*.gz')
-        # スードラベリングをしないとき
-        else:
-            win_path = f'../model/2017{sys.argv[2][:2]}/{sys.argv[2][2:]}/*.gz'
-            #  tmp_path_list = glob.glob(f'../model/2017{sys.argv[2][:2]}/5_tmp/*.gz')
-            tmp_path_list = glob.glob(f'../features/exp/*.gz')
-
+win_path = f'../features/4_winner/*.gz'
+tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
 
 base = utils.read_df_pkl('../input/base_first*')
 base_train = base[~base[target].isnull()].reset_index(drop=True)
@@ -116,83 +83,19 @@ feature_list = utils.parallel_load_data(path_list=win_path_list)
 df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
-# スードラベリングの時はtrainとtestのconcatした長さになる
-pl_length = 0
 
 #========================================================================
 # card_id list by first active month
-try:
-    if int(sys.argv[2][:2])>0:
-        train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2][:2]}.npy')
-        test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2][:2]}.npy')
-
-        if sys.argv[2][-2:]=='pl':
-            pred_path = glob.glob(f'../model/2017{sys.argv[2][:2]}/stack/*org0_*')[0]
-            pred_col = 'pred'
-            pred_feat = utils.read_pkl_gzip(pred_path)
-            train[pred_col] = pred_feat[:len(train)]
-            train.loc[~train[key].isin(train_latest_id_list), target] = train.loc[~train[key].isin(train_latest_id_list), pred_col]
-
-            tmp_test = test.copy()
-            tmp_test[target] = pred_feat[len(train):]
-
-            # first_active_monthが201712より前の場合、学習データセットから未来のfirst_active_monthを除外する
-            if int(sys.argv[2][:2])<12:
-                base = base[base['first_active_month'] <= f'2017-{sys.argv[2][:2]}']
-                train = train.merge(base[key].to_frame(), how='inner', on=key)
-                test = test.merge(base[key].to_frame(), how='inner', on=key)
-                tmp_test = tmp_test.merge(base[key].to_frame(), how='inner', on=key)
-
-
-            train = pd.concat([train, tmp_test], axis=0, ignore_index=True).drop(pred_col, axis=1)
-            pl_length = len(train)
-            del tmp_test
-            gc.collect()
-        else:
-            #  train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
-            #  test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
-            #  base = base[base['first_active_month'] <= f'2017-{sys.argv[2][:2]}']
-            #  train = train.merge(base[key].to_frame(), how='inner', on=key)
-            #  test = test.merge(base[key].to_frame(), how='inner', on=key)
-            submit = []
-except IndexError:
+if int(sys.argv[2])!=0:
+    train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2]}.npy')
+    test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2]}.npy')
+    train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
+    test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
+    submit = []
+else:
     pass
-except ValueError:
-    pass
-except TypeError:
-    print('TypeError')
-    sys.exit()
-    #  train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2]}.npy')
-    #  test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2]}.npy')
-    #  train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
-    #  test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
-    #  submit = []
 #========================================================================
-
-if 'first_active_month' in list(train.columns):
-    train.drop('first_active_month', axis=1, inplace=True)
-    test.drop('first_active_month', axis=1, inplace=True)
 y = train[target].values
-
-# Target Check
-#  y = np.round(y, 0)
-#  print(pd.Series(y).value_counts())
-#  sys.exit()
-
-#========================================================================
-# FM STACK
-#  try:
-#      if int(sys.argv[6])>0:
-#          fm_feat = utils.read_pkl_gzip('../stack/0112_150_stack_keras_lr0_117feats_1seed_128.0batch_OUT_CV0-73219_feat_no_amount_only_ohe_first_month_category123_feature123_encode.gz')['prediction'].values
-#          train['fm_keras'] = fm_feat[:len(train)]
-#          test['fm_keras'] = fm_feat[len(train):]
-
-#          fm_feat = utils.read_pkl_gzip('../stack/0112_234_stack_keras_lr0_72feats_1seed_128.0batch_OUT_CV0-688061879169805_LB.gz')['prediction'].values
-#          train['fm_keras_2'] = fm_feat[:len(train)]
-#          test['fm_keras_2'] = fm_feat[len(train):]
-#  except IndexError:
-#      pass
-#========================================================================
 
 
 if out_part=='part':
@@ -212,6 +115,10 @@ if out_part=='part':
 elif out_part=='all':
     #  Exclude Outlier
     train = train[train.target>-30]
+
+#  train = train[train[target]<= 9]
+#  train = train[train[target]> -9]
+
 
 #========================================================================
 
@@ -243,12 +150,31 @@ if len(drop_list):
 
 from sklearn.model_selection import StratifiedKFold
 
+from s018_make_first_month_distribution import make_fam_dist
+    base_fam = '2017-12'
+    limit_diff_num = 4 + i
+    if i==0:
+        is_drop=True
+    else:
+        is_drop=False
+    id_list = make_fam_dist(base_fam, limit_diff_num, is_drop=is_drop)
+
+    train = train[train[key].isin(id_list)]
+
+
 # seed_avg
 seed_pred = np.zeros(len(test))
 cv_list = []
 iter_list = []
 model_list = []
+train.reset_index(inplace=True, drop=True)
+test.reset_index(inplace=True , drop=True)
 for i, seed in enumerate(seed_list):
+
+    if key not in train.columns:
+        train.reset_index(inplace=True)
+    if key not in test.columns:
+        test.reset_index(inplace=True)
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
@@ -259,30 +185,129 @@ for i, seed in enumerate(seed_list):
     #      params['colsample_bytree'] = 0.7401342964627846
     #      params['min_child_samples'] = 61
 
-    if len(train)>150000 and pl_length==0:
-        train['outliers'] = train[target].map(lambda x: 1 if x<-3 else 0)
+    #========================================================================
+    # Validation Setting vvv
+    # Validation Set はFitさせたいFirst month のグループに絞る
+    # 1. マイナスでOutlierの閾値を切って、それらの分布が揃う様にKFoldを作る
+    if sys.argv[4]=='minus':
+        train['outliers'] = train[target].map(lambda x: 1 if x < outlier_thres else 0)
         folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
         kfold = folds.split(train,train['outliers'].values)
         train.drop('outliers', axis=1, inplace=True)
 
-    elif pl_length > 0 or int(sys.argv[2][:2]) != 0:
-        # Psued Labelingだと、outlierと予測された値は-7 ~ -18あたりになりそう?
-        train['outliers'] = train[target].map(lambda x: 1 if x<=-3 else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold = folds.split(train,train['outliers'].values)
-        train.drop('outliers', axis=1, inplace=True)
+    # 2. プラスマイナスでOutlierの閾値を切って、プラス、マイナス別に分布が揃う様にKFoldを作る
+    elif sys.argv[4]=='pmo':
+        plus  = train[train[target] >= 0]
+        tmp_minus = train[train[target] <  0]
+        minus = tmp_minus[tmp_minus[target] >  -30]
+        out = tmp_minus[tmp_minus[target] <  -30]
 
+        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
+        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
+        out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
+
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        kfold_plus = folds.split(plus, plus['outliers'].values)
+        kfold_minus = folds.split(minus, minus['outliers'].values)
+        kfold_out = folds.split(out, out['outliers'].values)
+
+        trn_idx_list = []
+        val_idx_list = []
+        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx), (o_trn_idx, o_val_idx) in zip(kfold_plus, kfold_minus, kfold_out):
+
+            def get_ids(df, idx):
+                ids = list(df.iloc[idx, :][key].values)
+                return ids
+
+            trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx) + get_ids(out, o_trn_idx)
+            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
+
+            # idをindexの番号にする
+            trn_ids = list(train[train[key].isin(trn_ids)].index)
+            val_ids = list(train[train[key].isin(val_ids)].index)
+
+            trn_idx_list.append(trn_ids)
+            val_idx_list.append(val_ids)
+        kfold = zip(trn_idx_list, val_idx_list)
+
+    elif sys.argv[4]=='pm':
+        plus  = train[train[target] >= 0]
+        tmp_minus = train[train[target] <  0]
+        minus = tmp_minus[tmp_minus[target] >  -30]
+
+        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
+        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
+
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        kfold_plus = folds.split(plus, plus['outliers'].values)
+        kfold_minus = folds.split(minus, minus['outliers'].values)
+
+        trn_idx_list = []
+        val_idx_list = []
+        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx) in zip(kfold_plus, kfold_minus):
+
+            def get_ids(df, idx):
+                ids = list(df.iloc[idx, :][key].values)
+                return ids
+
+            trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx)
+            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
+
+            # idをindexの番号にする
+            trn_ids = list(train[train[key].isin(trn_ids)].index)
+            val_ids = list(train[train[key].isin(val_ids)].index)
+
+            trn_idx_list.append(trn_ids)
+            val_idx_list.append(val_ids)
+        kfold = zip(trn_idx_list, val_idx_list)
+
+
+    elif sys.argv[4]=='fmpm':
+
+        train.reset_index(drop=True, inplace=True)
+        fm_train = train[train[key].isin(train_latest_id_list)].reset_index(drop=True)
+        plus  = fm_train[fm_train[target] >= 0]
+        minus = fm_train[fm_train[target] <  0]
+
+        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
+        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
+
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        kfold_plus = folds.split(plus, plus['outliers'].values)
+        kfold_minus = folds.split(minus, minus['outliers'].values)
+
+        trn_idx_list = []
+        val_idx_list = []
+        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx) in zip(kfold_plus, kfold_minus):
+
+            def get_ids(df, idx):
+                ids = list(df.iloc[idx, :][key].values)
+                return ids
+
+            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
+            trn_ids = list(set(list(train[key].values)) - set(val_ids))
+
+            # idをindexの番号にする
+            trn_ids = list(train[train[key].isin(trn_ids)].index)
+            val_ids = list(train[train[key].isin(val_ids)].index)
+
+            trn_idx_list.append(trn_ids)
+            val_idx_list.append(val_ids)
+
+        kfold = zip(trn_idx_list, val_idx_list)
+
+    # 3. Default KFold
     else:
         kfold = False
         fold_type = 'kfold'
-#========================================================================
+    #========================================================================
 
     train.sort_index(axis=1, inplace=True)
     test.sort_index(axis=1, inplace=True)
 
-#========================================================================
-# Train & Prediction Start
-#========================================================================
+    #========================================================================
+    # Train & Prediction Start
+    #========================================================================
     LGBM = LGBM.cross_prediction(
         train=train
         ,test=test
@@ -301,9 +326,6 @@ for i, seed in enumerate(seed_list):
 
     seed_pred += LGBM.prediction
 
-    if pl_length>0:
-        LGBM.result_stack = LGBM.result_stack.reset_index(drop=True).iloc[:pl_length,:]
-
     if i==0:
         cv_list.append(LGBM.cv_score)
         iter_list.append(LGBM.iter_avg)
@@ -318,13 +340,6 @@ for i, seed in enumerate(seed_list):
         cv_feim = cv_feim.merge(LGBM.cv_feim, how='inner', on='feature')
         df_pred = df_pred.merge(LGBM.result_stack[[key, 'prediction']].rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
 
-    try:
-        # first month modelで全体に対する予測値を出してstackする特徴を保存する場合
-        sys.argv[4]
-        model_list += LGBM.fold_model_list
-    except IndexError:
-        pass
-
 
 #========================================================================
 # STACKING
@@ -336,47 +351,6 @@ if len(stack_name)>0:
         df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
 #========================================================================
 
-
-#========================================================================
-# First Month Pred For Stack
-# expert modelを作成した際、全体に対する予測値を出してStackingできるようにする
-try:
-    sys.argv[4]
-    use_cols = LGBM.use_cols
-
-    if sys.argv[2][-2:]=='pl':
-        if int(sys.argv[2][:2])<12:
-            df_pred = base.merge(df_pred.drop(target, axis=1), how='inner', on=key)
-            pred = df_pred['pred_mean'].values
-        else:
-            pred = df_pred['pred_mean'].values
-        y_train = y
-
-    else:
-        # Reload Dataset
-        base = utils.read_df_pkl('../input/base_first0*')
-        base_train = base[~base[target].isnull()].reset_index(drop=True)
-        base_test = base[base[target].isnull()].reset_index(drop=True)
-        feature_list = utils.parallel_load_data(path_list=win_path_list)
-        df_feat = pd.concat(feature_list, axis=1)
-        train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
-        test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
-        train_test = pd.concat([train, test], axis=0, ignore_index=True)[use_cols]
-        y_train = train[target].values
-
-        pred = np.zeros(len(train_test))
-        for model in model_list:
-            pred += model.predict(train_test)
-        pred /= len(model_list)
-
-    y_pred = pred[:len(y_train)]
-    score = np.sqrt(mean_squared_error(np.where(y_train!=y_train, 0, y_train), y_pred))
-
-    utils.to_pkl_gzip(obj=pred, path=f"../model/2017{sys.argv[2][:2]}/stack/{start_time[4:13]}_elo_first_month2017{sys.argv[2]}_{len(seed_list)}seed_lr{str(learning_rate).replace('.', '-')}_round{num_boost_round}_CV{str(score)[:6].replace('.', '-')}")
-    #  pd.Series(LGBM.use_cols, name='use_cols').to_csv( f'../model/2017{sys.argv[2][:2]}/stack/{start_time[4:8]}_elo_first_month2017{sys.argv[2]}_fold_model_use_cols.csv',  index=False)
-except IndexError:
-    pass
-#========================================================================
 
 #========================================================================
 # Result
@@ -392,22 +366,21 @@ logger.info(f'''
 #========================================================================
 # Part of card_id Score
 try:
-    if pl_length>0 or sys.argv[2]=='all' or len(train)>150000:
-        for i in range(201701, 201713, 1):
-            train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
+    for i in range(201701, 201713, 1):
+        train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
 
-            part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
-            y_train = part_train[target].values
-            if 'pred_mean' in list(part_train.columns):
-                y_pred = part_train['pred_mean'].values
-            else:
-                y_pred = part_train['prediction'].values
-            part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+        part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
+        y_train = part_train[target].values
+        if 'pred_mean' in list(part_train.columns):
+            y_pred = part_train['pred_mean'].values
+        else:
+            y_pred = part_train['prediction'].values
+        part_score = np.sqrt(mean_squared_error(y_train, y_pred))
 
-            logger.info(f'''
-            #========================================================================
-            # First Month {i} of Score: {part_score} | N: {len(train_latest_id_list)}
-            #========================================================================''')
+        logger.info(f'''
+        #========================================================================
+        # First Month {i} of Score: {part_score} | N: {len(train_latest_id_list)}
+        #========================================================================''')
 except ValueError:
     pass
 except TypeError:
@@ -415,25 +388,21 @@ except TypeError:
 #========================================================================
 
 
-try:
-    sys.argv[4]
-    out_score = 0
-except IndexError:
-    if len(train)>150000:
-        if len(train[train[target]<-30])>0:
-            # outlierに対するスコアを出す
-            train.reset_index(inplace=True)
-            out_ids = train.loc[train.target<-30, key].values
-            out_val = train.loc[train.target<-30, target].values
-            if len(seed_list)==1:
-                out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
-            else:
-                out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
-            out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+if len(train)>150000:
+    if len(train[train[target]<-30])>0:
+        # outlierに対するスコアを出す
+        train.reset_index(inplace=True)
+        out_ids = train.loc[train.target<-30, key].values
+        out_val = train.loc[train.target<-30, target].values
+        if len(seed_list)==1:
+            out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
         else:
-            out_score = 0
+            out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
+        out_score = np.sqrt(mean_squared_error(out_val, out_pred))
     else:
         out_score = 0
+else:
+    out_score = 0
 
 # Save
 try:

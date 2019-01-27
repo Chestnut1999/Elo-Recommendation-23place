@@ -1,7 +1,8 @@
 #!/bin/bash
 
-python s015_first_month_expert_model.py dist_all_03 12org0 1 pm stack
-python s015_first_month_expert_model.py dist_all_03 12org0 1 pm stack
+python s019_arange_dist_train.py '../model/201712/200lag/*.gz' 2017-12 10 pm
+python s019_arange_dist_train.py '../model/201711/200lag/*.gz' 2017-11 10 pm
+python s019_arange_dist_train.py '../model/201710/200lag/*.gz' 2017-10 10 pm
 
-wait
-sudo shutdown -P
+# wait
+# sudo shutdown -P
