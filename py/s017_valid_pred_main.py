@@ -45,22 +45,46 @@ base['prediction'] = (base['pred_1'] + base['pred_2']) / 2
 base['prediction'] = base['pred_1']
 #  base['prediction'] = base['pred_2']
 base.reset_index(inplace=True)
+base = base[~base[target].isnull()]
 
 #========================================================================
 # Part of card_id Score
-for i in range(201701, 201713, 1):
-    train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
+part_score_list = []
+part_N_list = []
+fam_list = []
+#  for i in range(201101, 201713, 1):
+for i in range(201501, 201713, 1):
+    fam = str(i)[:4] + '-' + str(i)[-2:]
+    df_part = base[base['first_active_month']==fam]
+    if len(df_part)<1:
+        continue
+    part_id_list = df_part[key].values
 
-    df_part = base.loc[base[key].isin(train_latest_id_list), :]
-    y_train = df_part[target].values
-    y_pred = df_part['prediction'].values
-    y_pred = np.where(y_pred!=y_pred, 0, y_pred)
+    part_train = base.loc[base[key].isin(part_id_list), :]
+    y_train = part_train[target].values
+    if 'pred_mean' in list(part_train.columns):
+        y_pred = part_train['pred_mean'].values
+    else:
+        y_pred = part_train['prediction'].values
+
+    y_pred = np.where(y_pred != y_pred, 0, y_pred)
+    # RMSE
     part_score = np.sqrt(mean_squared_error(y_train, y_pred))
 
-    logger.info(f'''
-    #========================================================================
-    # First Month {i} of Score: {part_score} | N: {df_part.shape}/{len(train_latest_id_list)}
-    #========================================================================''')
+    fam_list.append(fam)
+    part_score_list.append(part_score)
+    part_N_list.append(len(part_id_list))
+
+#  for i, part_score, N in zip(fam_list, part_score_list, part_N_list):
+df = pd.DataFrame(np.asarray([fam_list, part_score_list, part_N_list]).T)
+df.columns = ['FAM', 'CV', 'N']
+
+# FAM: {i} | CV: {part_score} | N: {len(part_id_list)}
+pd.set_option('max_rows', 200)
+logger.info(f'''
+#========================================================================
+# {df}
+#========================================================================''')
 #========================================================================
 
 #  try:

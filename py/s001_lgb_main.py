@@ -1,5 +1,6 @@
 out_part = ['', 'part', 'all'][0]
 outlier_thres = -3
+base_fam = '2017-08'
 import sys
 import pandas as pd
 
@@ -55,15 +56,36 @@ params['learning_rate'] = learning_rate
 # Best outlier fit LB3.690
 #  num_leaves = 4
 #  num_threads = 32
-num_leaves = 31
 #  num_leaves = 16
-#  num_leaves = 48
+num_leaves = 31
+num_leaves = 48
+#  num_leaves = 63
 params['num_leaves'] = num_leaves
 if num_leaves>40:
     params['num_leaves'] = num_leaves
     params['subsample'] = 0.8757099996397999
     params['colsample_bytree'] = 0.7401342964627846
+    #  params['colsample_bytree'] = 0.3
     params['min_child_samples'] = 61
+
+#  params ={
+#          'boosting': 'goss',
+#          'objective': 'regression',
+#          'metric': 'rmse',
+#          'learning_rate': 0.01,
+#          'subsample': 0.9855232997390695,
+#          'max_depth': 7,
+#          'top_rate': 0.9064148448434349,
+#          'num_leaves': 63,
+#          'min_child_weight': 41.9612869171337,
+#          'other_rate': 0.0721768246018207,
+#          'reg_alpha': 9.677537745007898,
+#          'colsample_bytree': 0.5665320670155495,
+#          'min_split_gain': 9.820197773625843,
+#          'reg_lambda': 8.2532317400459,
+#          'min_data_in_leaf': 21,
+#          'verbose': -1,
+#          }
 
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
@@ -80,6 +102,13 @@ base_test = base[base[target].isnull()].reset_index(drop=True)
 
 win_path_list = glob.glob(win_path) + tmp_path_list
 feature_list = utils.parallel_load_data(path_list=win_path_list)
+
+# サイズチェック
+#  for f in feature_list:
+#      if f.shape[0]>330000:
+#          print(f.name)
+#  sys.exit()
+
 df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
@@ -149,17 +178,6 @@ if len(drop_list):
     test.drop(drop_list, axis=1, inplace=True)
 
 from sklearn.model_selection import StratifiedKFold
-
-from s018_make_first_month_distribution import make_fam_dist
-    base_fam = '2017-12'
-    limit_diff_num = 4 + i
-    if i==0:
-        is_drop=True
-    else:
-        is_drop=False
-    id_list = make_fam_dist(base_fam, limit_diff_num, is_drop=is_drop)
-
-    train = train[train[key].isin(id_list)]
 
 
 # seed_avg
@@ -296,6 +314,11 @@ for i, seed in enumerate(seed_list):
 
         kfold = zip(trn_idx_list, val_idx_list)
 
+    elif sys.argv[4]=='out':
+        train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        kfold = list(folds.split(train,train['outliers'].values))
+        train.drop('outliers', axis=1, inplace=True)
     # 3. Default KFold
     else:
         kfold = False
@@ -365,26 +388,45 @@ logger.info(f'''
 
 #========================================================================
 # Part of card_id Score
-try:
-    for i in range(201701, 201713, 1):
-        train_latest_id_list = np.load(f'../input/card_id_train_first_active_{i}.npy')
+part_score_list = []
+part_N_list = []
+fam_list = []
+#  for i in range(201101, 201713, 1):
+for i in range(201501, 201713, 1):
+    fam = str(i)[:4] + '-' + str(i)[-2:]
+    df_part = base_train[base_train['first_active_month']==fam]
+    if len(df_part)<1:
+        continue
+    part_id_list = df_part[key].values
 
-        part_train = df_pred.loc[df_pred[key].isin(train_latest_id_list), :]
-        y_train = part_train[target].values
-        if 'pred_mean' in list(part_train.columns):
-            y_pred = part_train['pred_mean'].values
-        else:
-            y_pred = part_train['prediction'].values
-        part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+    part_train = df_pred.loc[df_pred[key].isin(part_id_list), :]
+    y_train = part_train[target].values
+    if 'pred_mean' in list(part_train.columns):
+        y_pred = part_train['pred_mean'].values
+    else:
+        y_pred = part_train['prediction'].values
 
-        logger.info(f'''
-        #========================================================================
-        # First Month {i} of Score: {part_score} | N: {len(train_latest_id_list)}
-        #========================================================================''')
-except ValueError:
-    pass
-except TypeError:
-    pass
+    y_pred = np.where(y_pred != y_pred, 0, y_pred)
+    # RMSE
+    part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+
+    fam_list.append(fam)
+    part_score_list.append(part_score)
+    part_N_list.append(len(part_id_list))
+
+    if fam==base_fam:
+        fam_score = part_score
+
+#  for i, part_score, N in zip(fam_list, part_score_list, part_N_list):
+df = pd.DataFrame(np.asarray([fam_list, part_score_list, part_N_list]).T)
+df.columns = ['FAM', 'CV', 'N']
+
+# FAM: {i} | CV: {part_score} | N: {len(part_id_list)}
+pd.set_option('max_rows', 200)
+logger.info(f'''
+#========================================================================
+# {df}
+#========================================================================''')
 #========================================================================
 
 
