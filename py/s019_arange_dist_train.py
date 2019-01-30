@@ -6,7 +6,7 @@ outlier_thres = -3
 base_multi = int(sys.argv[1])
 base_fam = sys.argv[2]
 fold=5
-num_threads = -1
+num_threads = 34
 
 #========================================================================
 # Args
@@ -67,6 +67,7 @@ num_leaves = 4
 #  num_leaves = 16
 #  num_leaves = 48
 params['num_leaves'] = num_leaves
+params['num_threads'] = num_threads
 if num_leaves>40:
     params['num_leaves'] = num_leaves
     params['subsample'] = 0.8757099996397999
