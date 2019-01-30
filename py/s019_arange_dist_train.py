@@ -1,10 +1,12 @@
-outlier_thres = -3
-#  base_limit = 40
-multi = 12
-fold=5
-num_threads = 34
 import sys
 import pandas as pd
+outlier_thres = -3
+#  base_limit = 40
+#  base_multi = 7
+base_multi = int(sys.argv[1])
+base_fam = sys.argv[2]
+fold=5
+num_threads = -1
 
 #========================================================================
 # Args
@@ -22,12 +24,13 @@ submit = pd.read_csv('../input/sample_submission.csv')
 
 
 model_type='lgb'
-try:
-    learning_rate = float(sys.argv[1])
-    win_path = f'../features/4_winner/*.gz'
-except ValueError:
-    learning_rate = 0.01
-    win_path = sys.argv[1]
+#  try:
+#      learning_rate = float(sys.argv[1])
+#      win_path = f'../features/4_winner/*.gz'
+#  except ValueError:
+learning_rate = 0.01
+win_path = sys.argv[1]
+win_path = f'../features/4_winner/*.gz'
 #  learning_rate = 1
 early_stopping_rounds = 150
 num_boost_round = 20000
@@ -59,17 +62,18 @@ params = params_elo()[1]
 params['learning_rate'] = learning_rate
 
 # Best outlier fit LB3.690
-#  num_leaves = 4
+num_leaves = 4
 #  num_leaves = 31
 #  num_leaves = 16
-num_leaves = 48
+#  num_leaves = 48
 params['num_leaves'] = num_leaves
 if num_leaves>40:
     params['num_leaves'] = num_leaves
     params['subsample'] = 0.8757099996397999
-    params['colsample_bytree'] = 0.7401342964627846
-    #  params['colsample_bytree'] = 0.3
-    params['min_child_samples'] = 61
+    #  params['colsample_bytree'] = 0.7401342964627846
+    params['colsample_bytree'] = 0.3
+    #  params['min_child_samples'] = 61
+    params['min_child_samples'] = 40
 
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
@@ -89,8 +93,9 @@ df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
 
-y = train[target].values
+self_predict = train.copy()
 
+y = train[target].values
 
 #========================================================================
 
@@ -129,28 +134,74 @@ iter_list = []
 model_list = []
 for i, seed in enumerate(seed_list):
 
+    multi = base_multi + i
+
     #========================================================================
     # 分布をその月に近づける。is_dropとlimit_diff_numで揺らぎを作る（外れ値が多くなる）
-    base_fam = sys.argv[2]
     #  limit_diff_num = base_limit + i
-    multi + i
     if i%3==1:
         is_drop=True
     else:
         is_drop=False
         #  is_drop=True
-    id_list = make_fam_dist(base_fam, multi, is_drop=is_drop)
+    # 100,000件以上のサンプルを確保できるmultiから始める
+    cnt = 0
+    while True:
+        # Sampling
+        id_list = make_fam_dist(base_fam, multi, is_drop=is_drop)
+        if i>0:
+            break
+        cnt +=1
+        if cnt>10:
+            break
+        #  N_diff = len(id_list) - 120000
+        N_diff = len(id_list) - 100000
+        #  N_diff = len(id_list) - 50000
+        if N_diff<0:
+            if N_diff>-10000:
+                base_multi +=1
+            elif N_diff>-20000:
+                base_multi +=2
+            elif N_diff>-30000:
+                base_multi +=3
+            elif N_diff>-40000:
+                base_multi +=4
+            elif N_diff>-50000:
+                base_multi +=5
+            elif N_diff>-100000:
+                base_multi +=10
+            elif N_diff>-170000:
+                base_multi +=20
+            else:
+                sys.exit()
+            multi = base_multi
+            continue
+        elif N_diff>0:
+            if N_diff<10000:
+                break
+            elif N_diff<20000:
+                base_multi -=1
+            elif N_diff<30000:
+                base_multi -=2
+            elif N_diff<40000:
+                base_multi -=3
+            elif N_diff<50000:
+                base_multi -=4
+            elif N_diff<100000:
+                base_multi -=5
+            elif N_diff<200000:
+                base_multi -=10
+            else:
+                sys.exit()
+            multi = base_multi
+            continue
+        else:
+            break
+    logger.info(f'''
     #========================================================================
-
-    # cross_predictionでkeyがset_indexされるので
-    #  if key not in train.columns:
-    #      train.reset_index(inplace=True)
-    #  else:
-    #      train.reset_index(inplace=True, drop=True)
-    #  if key not in test.columns:
-    #      test.reset_index(inplace=True)
-    #  else:
-    #      test.reset_index(inplace=True , drop=True)
+    # Base FAM: {base_fam} | Multi: {multi} | Val: {sys.argv[4]} | Seed: {seed}
+    #========================================================================''')
+    #========================================================================
 
     if len(seed_list)>1:
         if i==0:
@@ -302,7 +353,8 @@ for i, seed in enumerate(seed_list):
     #========================================================================
     # Train & Prediction Start
     #========================================================================
-    LGBM = LGBM.cross_prediction(
+    #  LGBM = LGBM.cross_prediction(
+    LGBM = LGBM.dist_prediction(
         train=train
         ,test=test
         ,key=key
@@ -315,7 +367,7 @@ for i, seed in enumerate(seed_list):
         ,early_stopping_rounds=early_stopping_rounds
         ,oof_flg=oof_flg
         ,self_kfold=kfold
-        #  ,comp_name='elo'
+        ,self_predict=self_predict
     )
 
     seed_pred += LGBM.prediction

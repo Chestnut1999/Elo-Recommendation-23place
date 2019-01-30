@@ -9,7 +9,7 @@ import pandas as pd
 #========================================================================
 key = 'card_id'
 target = 'target'
-ignore_list = [key, target, 'merchant_id', 'column_0']
+ignore_list = [key, target, 'merchant_id', 'first_active_month']
 
 stack_name='en_route'
 fname=''
@@ -64,8 +64,8 @@ params['num_leaves'] = num_leaves
 if num_leaves>40:
     params['num_leaves'] = num_leaves
     params['subsample'] = 0.8757099996397999
-    params['colsample_bytree'] = 0.7401342964627846
-    #  params['colsample_bytree'] = 0.3
+    #  params['colsample_bytree'] = 0.7401342964627846
+    params['colsample_bytree'] = 0.3
     params['min_child_samples'] = 61
 
 #  params ={
