@@ -24,7 +24,7 @@ try:
     learning_rate = float(sys.argv[1])
 except ValueError:
     learning_rate = 0.01
-early_stopping_rounds = 150
+early_stopping_rounds = 200
 num_boost_round = 5000
 
 import numpy as np
@@ -394,6 +394,7 @@ logger.info(f'''
 
 #========================================================================
 # Part of card_id Score
+bench = pd.read_csv('../input/bench_LB3684_FAM_cv_score.csv')
 part_score_list = []
 part_N_list = []
 fam_list = []
@@ -415,6 +416,8 @@ for i in range(201501, 201713, 1):
     y_pred = np.where(y_pred != y_pred, 0, y_pred)
     # RMSE
     part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+    bench_score = bench[bench['FAM']==fam]['CV'].values[0]
+    part_score -= bench_score
 
     fam_list.append(fam)
     part_score_list.append(part_score)
