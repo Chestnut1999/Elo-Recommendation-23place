@@ -94,7 +94,7 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 
 win_path = f'../features/4_winner/*.gz'
-tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
+tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 
 base = utils.read_df_pkl('../input/base_first*')
 base_train = base[~base[target].isnull()].reset_index(drop=True)
@@ -489,7 +489,7 @@ try:
     if int(sys.argv[2])==0 and len(train)>150000:
 
         import re
-        path_list = glob.glob('../log_submit/01*CV*LB*.csv')
+        path_list = glob.glob('../log_submit/0*CV*LB*.csv')
         path_list.append(submit_path)
         #  path_list_2 = glob.glob('../check_submit/*.csv')
         #  path_list += path_list_2

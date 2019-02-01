@@ -113,7 +113,8 @@ def move_to_use():
     done_list = []
     for feature in best_feature:
         for path in path_list:
-            if path.count(feature[3:]):
+            #  if path.count(feature[3:]):
+            if path.count(feature):
                 try:
                     shutil.move(path, win_path)
                     filename = re.search(r'/([^/.]*).gz', path).group(1)
