@@ -107,7 +107,8 @@ def move_to_use():
     second_list = glob.glob('../features/2_second_valid/*')
     third_list = glob.glob('../features/3_third_valid/*')
     tmp_list = glob.glob('../features/5_tmp/*')
-    path_list = third_list + tmp_list + win_list
+    path_list = third_list
+    #  path_list = third_list + tmp_list + win_list
     #  path_list = first_list + second_list + third_list + tmp_list + win_list
 
     done_list = []

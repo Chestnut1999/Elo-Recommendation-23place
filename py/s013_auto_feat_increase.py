@@ -9,27 +9,14 @@ import pandas as pd
 #========================================================================
 key = 'card_id'
 target = 'target'
-ignore_list = [key, target, 'merchant_id']
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index']
 win_path = f'../features/4_winner/*.gz'
 
-#========================================================================
-# argv[1] : model_type 
-# argv[2] : learning_rate
-# argv[3] : early_stopping_rounds
-#========================================================================
-
 try:
-    model_type=sys.argv[1]
-except IndexError:
-    model_type='lgb'
-try:
-    learning_rate = float(sys.argv[2])
+    learning_rate = float(sys.argv[1])
 except IndexError:
     learning_rate = 0.1
-try:
-    early_stopping_rounds = int(sys.argv[3])
-except IndexError:
-    early_stopping_rounds = 150
+early_stopping_rounds = 150
 num_boost_round = 10000
 
 import numpy as np
@@ -56,10 +43,24 @@ try:
 except NameError:
     logger=logger_func()
 
-if model_type=='lgb':
-    params = params_elo()[1]
-    params['learning_rate'] = learning_rate
+model_type='lgb'
+params = params_elo()[1]
+
+num_leaves = 31
+num_leaves = 48
+#  num_leaves = 63
+params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
+params['learning_rate'] = learning_rate
+if num_leaves>40:
+    params['subsample'] = 0.8757099996397999
+    #  params['colsample_bytree'] = 0.7401342964627846
+    params['colsample_bytree'] = 0.3
+    params['min_child_samples'] = 50
+else:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.3
+    params['min_child_samples'] = 30
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -67,7 +68,7 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 #========================================================================
 # Data Load
 win_path = '../features/4_winner/*.gz'
-base = utils.read_df_pkl('../input/base*')
+base = utils.read_df_pkl('../input/base_first*0*')
 win_path_list = glob.glob(win_path)
 # tmp_path_listには検証中のfeatureを入れてある
 tmp_path_list = glob.glob('../features/5_tmp/*.gz')
@@ -80,16 +81,7 @@ df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 #  test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
 test = []
-try:
-    sys.argv[5]
-    train = train.sample(80000)
-except IndexError:
-    pass
 
-#========================================================================
-#  train_latest_id_list = np.load('../input/card_id_train_first_active_201712.npy')
-#  test_latest_id_list = np.load('../input/card_id_test_first_active_201712.npy')
-#========================================================================
 
 #========================================================================
 # LGBM Setting
@@ -116,24 +108,43 @@ if len(drop_list):
 valid_feat_list = [''] + glob.glob('../features/1_first_valid/*.gz')
 #========================================================================
 
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import KFold
 # 全量データで学習する場合
-try:
-    len(train_latest_id_list)
-    pass
-except NameError:
-
-    from sklearn.model_selection import StratifiedKFold
-    train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-    folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-    kfold = list(folds.split(train,train['outliers'].values))
-    train.drop('outliers', axis=1, inplace=True)
+if sys.argv[3]=='ods':
 
     #========================================================================
-    # outlierに対するスコアを出す
-    from sklearn.metrics import mean_squared_error
-    out_ids = train.loc[train.target<-30, key].values
-    out_val = train.loc[train.target<-30, target].values
+    # ods.ai 3rd kernel
+    # https://www.kaggle.com/c/elo-merchant-category-recommendation/discussion/78903
+    # KFold: n_splits=6(or 7)!, shuffle=False!
     #========================================================================
+    train['rounded_target'] = train['target'].round(0)
+    train = train.sort_values('rounded_target').reset_index(drop=True)
+    vc = train['rounded_target'].value_counts()
+    vc = dict(sorted(vc.items()))
+    df = pd.DataFrame()
+    train['indexcol'],idx = 0,1
+    for k,v in vc.items():
+        step = train.shape[0]/v
+        indent = train.shape[0]/(v+1)
+        df2 = train[train['rounded_target'] == k].sample(v, random_state=120).reset_index(drop=True)
+        for j in range(0, v):
+            df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
+        df = pd.concat([df2,df])
+        idx+=1
+    train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
+    del train['indexcol'], train['rounded_target']
+    fold_type = 'self'
+    fold = 6
+    folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
+    kfold = list(folds.split(train, train[target].values))
+
+
+#========================================================================
+# outlierに対するスコアを出す
+out_ids = train.loc[train.target<-30, key].values
+out_val = train.loc[train.target<-30, target].values
+#========================================================================
 
 # Result Input
 valid_list = []
@@ -173,18 +184,7 @@ while len(valid_feat_list)>1:
             path = 'base_path'
 
         # idを絞る
-        try:
-            tmp_train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
-            #  tmp_test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
-            fold_type='kfold'
-            kfold = False
-            all_id = False
-            tmp_train.sort_index(axis=1, inplace=True)
-            #  tmp_test.sort_index(axis=1, inplace=True)
-        except NameError:
-            all_id = True
-            train.sort_index(axis=1, inplace=True)
-            pass
+        train.sort_index(axis=1, inplace=True)
 
         logger.info(f'''
 #========================================================================
@@ -192,42 +192,28 @@ while len(valid_feat_list)>1:
 # Valid Feature: {valid_feat}
 #========================================================================''')
 
-
         #========================================================================
         # Train & Prediction Start
         #========================================================================
         try:
-            seed_list = [1208, 605, 328, 1222, 405, 1212, 1012, 1128, 2019][:int(sys.argv[4])]
+            seed_list = [1208, 605, 328, 1222, 405, 1212, 1012, 1128, 2019][:int(sys.argv[2])]
         except IndexError:
             seed_list = [1208]
         for seed in seed_list:
             LGBM.seed = seed
 
-            if all_id:
-                LGBM = LGBM.cross_validation(
-                    train=train
-                    ,key=key
-                    ,target=target
-                    ,fold_type=fold_type
-                    ,fold=fold
-                    ,group_col_name=group_col_name
-                    ,params=params
-                    ,num_boost_round=num_boost_round
-                    ,early_stopping_rounds=early_stopping_rounds
-                    ,self_kfold=kfold
-                )
-            else:
-                LGBM = LGBM.cross_validation(
-                    train=tmp_train
-                    ,key=key
-                    ,target=target
-                    ,fold_type=fold_type
-                    ,fold=fold
-                    ,group_col_name=group_col_name
-                    ,params=params
-                    ,num_boost_round=num_boost_round
-                    ,early_stopping_rounds=early_stopping_rounds
-                )
+            LGBM = LGBM.cross_validation(
+                train=train
+                ,key=key
+                ,target=target
+                ,fold_type=fold_type
+                ,fold=fold
+                ,group_col_name=group_col_name
+                ,params=params
+                ,num_boost_round=num_boost_round
+                ,early_stopping_rounds=early_stopping_rounds
+                ,self_kfold=kfold
+            )
 
             cv_score = LGBM.cv_score
             cv_feim = LGBM.cv_feim
@@ -235,15 +221,11 @@ while len(valid_feat_list)>1:
 
             cv_score_list.append(cv_score)
 
-            if len(target)>70000:
-                if len(df_pred):
-                    df_pred['prediction'] += LGBM.prediction
-                else:
-                    if all_id:
-                        df_pred = train.reset_index()[[key, target]].copy()
-                    else:
-                        df_pred = tmp_train.reset_index()[[key, target]].copy()
-                    df_pred['prediction'] = LGBM.prediction
+            if len(df_pred):
+                df_pred['prediction'] += LGBM.prediction
+            else:
+                df_pred = train.reset_index()[[key, target]].copy()
+                df_pred['prediction'] = LGBM.prediction
 
             if cv_score > base_cv_score:
                 no_update_cnt += 1
@@ -270,9 +252,7 @@ while len(valid_feat_list)>1:
             train.drop(valid_feat, axis=1, inplace=True)
             #  test.drop(valid_feat, axis=1, inplace=True)
 
-
-        if len(target)>70000:
-            df_pred['prediction'] /= len(seed_list)
+        df_pred['prediction'] /= len(seed_list)
 
         cv_score_mean = np.mean(cv_score_list)
         score_update = cv_score_mean < base_cv_score
@@ -291,13 +271,12 @@ while len(valid_feat_list)>1:
         #========================================================================
         # Result Summarize
 
-        if len(target)>70000:
-            #========================================================================
-            # outlierに対するスコアを出す
-            out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
-            out_score = np.sqrt(mean_squared_error(out_val, out_pred))
-            LGBM.val_score_list.append(out_score)
-            #========================================================================
+        #========================================================================
+        # outlierに対するスコアを出す
+        out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+        out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+        LGBM.val_score_list.append(out_score)
+        #========================================================================
 
         # 結果ファイルの作成
         LGBM.val_score_list.append(cv_score_mean)
@@ -313,7 +292,6 @@ while len(valid_feat_list)>1:
             base_cv_score = cv_score_mean
 
         train_used_paths.append(path)
-        #  test_used_paths.append(test_path)
         #========================================================================
 
         # 中間結果の保存
@@ -330,15 +308,6 @@ while len(valid_feat_list)>1:
         #      shutil.move(p, '../features/2_second_valid/')
         used_path = []
 
-
-    #  df_valid = pd.concat(valid_list, axis=1)
-    #  df_valid.index = ['cv' if j==fold else f"fold{j}" for j in range(fold+1)]
-    #  for col in df_valid.columns:
-    #      if col.count('base'):continue
-    #      df_valid[f"val_{col}"] = (df_valid[col].values < base_valid.values) * 1
-    #  df_valid.to_csv(f'../output/{start_time[4:12]}_elo_multi_feat_valid_lr{learning_rate}.csv', index=False)
-    #  del df_valid
-    #  gc.collect()
 
     # 今ループの結果検証
     df_valid = pd.concat(tmp_valid_list, axis=1)

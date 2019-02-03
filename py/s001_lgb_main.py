@@ -25,6 +25,7 @@ try:
 except ValueError:
     learning_rate = 0.01
 early_stopping_rounds = 200
+#  early_stopping_rounds = 150
 num_boost_round = 5000
 
 import numpy as np
@@ -62,11 +63,14 @@ num_leaves = 48
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
 if num_leaves>40:
-    params['num_leaves'] = num_leaves
     params['subsample'] = 0.8757099996397999
     #  params['colsample_bytree'] = 0.7401342964627846
     params['colsample_bytree'] = 0.3
-    params['min_child_samples'] = 61
+    params['min_child_samples'] = 50
+else:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.3
+    params['min_child_samples'] = 30
 
 #  params ={
 #          'boosting': 'goss',
@@ -156,7 +160,7 @@ if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
 
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, KFold
 
 
 # seed_avg
@@ -321,9 +325,11 @@ for i, seed in enumerate(seed_list):
             idx+=1
         train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
         del train['indexcol'], train['rounded_target']
-        kfold = False
-        fold_type = 'kfold'
+        fold_type = 'self'
         fold = 6
+        folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
+        kfold = folds.split(train, train[target].values)
+
 
     # 3. Default KFold
     else:
