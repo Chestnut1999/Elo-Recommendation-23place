@@ -9,7 +9,7 @@ import pandas as pd
 #========================================================================
 key = 'card_id'
 target = 'target'
-ignore_list = [key, target, 'merchant_id', 'first_active_month']
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term']
 
 stack_name='en_route'
 fname=''
@@ -59,38 +59,39 @@ params['learning_rate'] = learning_rate
 #  num_leaves = 16
 num_leaves = 31
 num_leaves = 48
-#  num_leaves = 63
+num_leaves = 59
+num_leaves = 61
+num_leaves = 68
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
-if num_leaves>40:
+if num_leaves>65:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.2755158
+    params['min_child_samples'] = 37
+    params['lambda_l2'] = 7
+
+elif num_leaves>60:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.2792
+    params['min_child_samples'] = 59
+    params['lambda_l2'] = 2
+
+elif num_leaves>50:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.256142
+    params['min_child_samples'] = 55
+    params['lambda_l2'] = 3
+
+elif num_leaves>40:
     params['subsample'] = 0.8757099996397999
     #  params['colsample_bytree'] = 0.7401342964627846
     params['colsample_bytree'] = 0.3
     params['min_child_samples'] = 50
+
 else:
     params['subsample'] = 0.9
     params['colsample_bytree'] = 0.3
     params['min_child_samples'] = 30
-
-#  params ={
-#          'boosting': 'goss',
-#          'objective': 'regression',
-#          'metric': 'rmse',
-#          'learning_rate': 0.01,
-#          'subsample': 0.9855232997390695,
-#          'max_depth': 7,
-#          'top_rate': 0.9064148448434349,
-#          'num_leaves': 63,
-#          'min_child_weight': 41.9612869171337,
-#          'other_rate': 0.0721768246018207,
-#          'reg_alpha': 9.677537745007898,
-#          'colsample_bytree': 0.5665320670155495,
-#          'min_split_gain': 9.820197773625843,
-#          'reg_lambda': 8.2532317400459,
-#          'min_data_in_leaf': 21,
-#          'verbose': -1,
-#          }
-
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -318,7 +319,7 @@ for i, seed in enumerate(seed_list):
         for k,v in vc.items():
             step = train.shape[0]/v
             indent = train.shape[0]/(v+1)
-            df2 = train[train['rounded_target'] == k].sample(v, random_state=120).reset_index(drop=True)
+            df2 = train[train['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
             for j in range(0, v):
                 df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
             df = pd.concat([df2,df])
