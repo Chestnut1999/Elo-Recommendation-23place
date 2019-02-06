@@ -4,6 +4,11 @@ num_threads = 36
 import sys
 import pandas as pd
 
+from sklearn import neighbors
+knn = 300
+knn = neighbors.KNeighborsRegressor(n_jobs=num_threads, n_neighbors=300)
+
+
 #========================================================================
 # Args
 #========================================================================
@@ -51,53 +56,6 @@ try:
 except NameError:
     logger=logger_func()
 
-params = params_elo()[1]
-params['learning_rate'] = learning_rate
-
-# Best outlier fit LB3.690
-#  num_leaves = 4
-#  num_leaves = 16
-num_leaves = 31
-num_leaves = 48
-num_leaves = 59
-num_leaves = 61
-num_leaves = 68
-num_leaves = 70
-params['num_leaves'] = num_leaves
-params['num_threads'] = num_threads
-if num_leaves>=70:
-    params['subsample'] = 0.9
-    params['colsample_bytree'] = 0.325582
-    params['min_child_samples'] = 30
-    params['lambda_l2'] = 7
-elif num_leaves>65:
-    params['subsample'] = 0.9
-    params['colsample_bytree'] = 0.2755158
-    params['min_child_samples'] = 37
-    params['lambda_l2'] = 7
-
-elif num_leaves>60:
-    params['subsample'] = 0.9
-    params['colsample_bytree'] = 0.2792
-    params['min_child_samples'] = 59
-    params['lambda_l2'] = 2
-
-elif num_leaves>50:
-    params['subsample'] = 0.9
-    params['colsample_bytree'] = 0.256142
-    params['min_child_samples'] = 55
-    params['lambda_l2'] = 3
-
-elif num_leaves>40:
-    params['subsample'] = 0.8757099996397999
-    #  params['colsample_bytree'] = 0.7401342964627846
-    params['colsample_bytree'] = 0.3
-    params['min_child_samples'] = 50
-
-else:
-    params['subsample'] = 0.9
-    params['colsample_bytree'] = 0.3
-    params['min_child_samples'] = 30
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
@@ -203,121 +161,7 @@ for i, seed in enumerate(seed_list):
 
     #========================================================================
     # Validation Setting vvv
-    # Validation Set はFitさせたいFirst month のグループに絞る
-    # 1. マイナスでOutlierの閾値を切って、それらの分布が揃う様にKFoldを作る
-    if sys.argv[4]=='minus':
-        train['outliers'] = train[target].map(lambda x: 1 if x < outlier_thres else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold = folds.split(train,train['outliers'].values)
-        train.drop('outliers', axis=1, inplace=True)
-
-    # 2. プラスマイナスでOutlierの閾値を切って、プラス、マイナス別に分布が揃う様にKFoldを作る
-    elif sys.argv[4]=='pmo':
-        plus  = train[train[target] >= 0]
-        tmp_minus = train[train[target] <  0]
-        minus = tmp_minus[tmp_minus[target] >  -30]
-        out = tmp_minus[tmp_minus[target] <  -30]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-        out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-        kfold_out = folds.split(out, out['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx), (o_trn_idx, o_val_idx) in zip(kfold_plus, kfold_minus, kfold_out):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx) + get_ids(out, o_trn_idx)
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
-
-            # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-        kfold = zip(trn_idx_list, val_idx_list)
-
-    elif sys.argv[4]=='pm':
-        plus  = train[train[target] >= 0]
-        tmp_minus = train[train[target] <  0]
-        minus = tmp_minus[tmp_minus[target] >  -30]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx) in zip(kfold_plus, kfold_minus):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx)
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
-
-            # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-        kfold = zip(trn_idx_list, val_idx_list)
-
-
-    elif sys.argv[4]=='fmpm':
-
-        train.reset_index(drop=True, inplace=True)
-        fm_train = train[train[key].isin(train_latest_id_list)].reset_index(drop=True)
-        plus  = fm_train[fm_train[target] >= 0]
-        minus = fm_train[fm_train[target] <  0]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx) in zip(kfold_plus, kfold_minus):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
-            trn_ids = list(set(list(train[key].values)) - set(val_ids))
-
-            # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-
-        kfold = zip(trn_idx_list, val_idx_list)
-
-    elif sys.argv[4]=='out':
-        train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold = list(folds.split(train,train['outliers'].values))
-        train.drop('outliers', axis=1, inplace=True)
-    elif sys.argv[4]=='ods':
+    if sys.argv[4]=='ods':
 
         #========================================================================
         # ods.ai 3rd kernel

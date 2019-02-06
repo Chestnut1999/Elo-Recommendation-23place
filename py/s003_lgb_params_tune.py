@@ -139,7 +139,7 @@ def objective(trial):
     num_leaves = trial.suggest_int('num_leaves', 54, 73)
     #  max_depth = trial.suggest_int('max_depth', 8, 12)
     min_child_samples = trial.suggest_int('min_child_samples', 30, 75)
-    lambda_l2 = trial.suggest_int('lambda_l2', 3.0, 7.0)
+    lambda_l2 = trial.suggest_int('lambda_l2', 3.0, 15.0)
 
     params = {
         'num_threads': -1,
@@ -239,7 +239,7 @@ def objective(trial):
 
 
 study = optuna.create_study()
-study.optimize(objective, n_trials=200)
+study.optimize(objective, n_trials=250)
 
 df_valid = pd.concat(valid_list, axis=1)
 df_valid.to_csv(f'../output/{start_time[4:11]}_elo_params_tune.csv')
