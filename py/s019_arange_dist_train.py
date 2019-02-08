@@ -5,8 +5,9 @@ outlier_thres = -3
 #  base_multi = 7
 base_multi = int(sys.argv[1])
 base_term = int(sys.argv[2])
-fold=5
+fold=6
 num_threads = 34
+num_threads = 36
 
 #========================================================================
 # Args
@@ -110,10 +111,17 @@ tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
 
 base = utils.read_df_pkl('../input/base_term*0*')[[key, target, col_term]]
 base[col_term] = base[col_term].map(lambda x: 
+                                          4 if x<=4  else 
+                                          5 if x<=5  else 
                                           6 if 6<=x and x<=8  else 
-                                          9 if 9<=x and x<=12
+                                          9 if 9<=x and x<=12  else 
+                                          15 if 13<=x and x<=15 else 
+                                          18 if 16<=x and x<=18 else 
+                                          24 if 19<=x
                                           else x
                                          )
+print(base[col_term].value_counts())
+sys.exit()
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)

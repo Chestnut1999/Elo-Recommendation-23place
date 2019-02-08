@@ -1,6 +1,7 @@
-out_part = ['', 'no_out', 'all'][0]
+out_part = ['', 'no_out', 'all'][1]
 outlier_thres = -3
 num_threads = 32
+num_threads = 36
 import sys
 import pandas as pd
 
@@ -10,6 +11,8 @@ import pandas as pd
 key = 'card_id'
 target = 'target'
 col_term = 'hist_regist_term'
+no_flg = 'no_out_flg'
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term, no_flg]
 ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term]
 
 stack_name='en_route'
@@ -59,11 +62,11 @@ params['learning_rate'] = learning_rate
 #  num_leaves = 16
 num_leaves = 31
 num_leaves = 48
-num_leaves = 59
-num_leaves = 61
-num_leaves = 68
+#  num_leaves = 59
+#  num_leaves = 61
+#  num_leaves = 68
 num_leaves = 70
-num_leaves = 71
+#  num_leaves = 71
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
 if num_leaves==71:
@@ -112,17 +115,20 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 win_path = f'../features/4_winner/*.gz'
 win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
+#  win_path = f'../model/LB3679_48leaves_colsam03/*.gz'
+#  win_path = f'../model/LB3684_48leaves_colsam03/*.gz'
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
 win_path_list = glob.glob(win_path) + tmp_path_list
 win_path_list = glob.glob(win_path)
 
-base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month']]
-base[col_term] = base[col_term].map(lambda x: 
-                                          6 if 6<=x and x<=8  else 
-                                          9 if 9<=x and x<=12
-                                          else x
-                                         )
+base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month', no_flg]]
+base[no_flg].fillna(0, inplace=True)
+#  base[col_term] = base[col_term].map(lambda x:
+#                                            6 if 6<=x and x<=8  else
+#                                            9 if 9<=x and x<=12
+#                                            else x
+#                                           )
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
@@ -140,22 +146,22 @@ df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
 
-#========================================================================
-# card_id list by first active month
-if int(sys.argv[2])!=0:
-    train_latest_id_list = np.load(f'../input/card_id_train_first_active_2017{sys.argv[2]}.npy')
-    test_latest_id_list = np.load(f'../input/card_id_test_first_active_2017{sys.argv[2]}.npy')
-    train = train.loc[train[key].isin(train_latest_id_list), :].reset_index(drop=True)
-    test = test.loc[test[key].isin(test_latest_id_list), :].reset_index(drop=True)
-    submit = []
-else:
-    pass
-#========================================================================
+#  try:
+#      train = train[train[no_flg]!=1]
+#      test = test[test[no_flg]!=1]
+#      base_train = base_train[base_train[no_flg]!=1]
+#      base_teset = base_test[base_test[no_flg]!=1]
+#  except IndexError:
+#      pass
 y = train[target].values
 
 
 if out_part=='no_out':
+    self_predict = train.copy()
+    self_predict.reset_index(inplace=True, drop=True)
     train = train[train[target]>-30]
+else:
+    self_predict = []
 
 #========================================================================
 
@@ -181,11 +187,12 @@ dummie=1
 oof_flg=True
 LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
 
-#  train, test, drop_list = LGBM.data_check(train=train, test=test, target=target)
 train, test, drop_list = LGBM.data_check(train=train, test=test, target=target, encode='label')
 if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
+    if out_part=='no_out':
+        self_predict.drop(drop_list, axis=1, inplace=True)
 
 from sklearn.model_selection import StratifiedKFold, KFold
 
@@ -332,30 +339,16 @@ for i, seed in enumerate(seed_list):
 
     elif sys.argv[4]=='term':
         outlier_thres = -3
-        term4  = train[train[col_term] == 4]
-        term5  = train[train[col_term] == 5]
-        term6  = train[train[col_term] == 6]
-        term9  = train[train[col_term] == 9]
-        term15  = train[train[col_term] == 15]
-        term18  = train[train[col_term] == 18]
-        term24  = train[train[col_term] == 24]
 
-        df_list = [
-        term4
-        ,term5
-        ,term6
-        ,term9
-        ,term15
-        ,term18
-        ,term24
-        ]
-
+        term_list = list(train[col_term].value_counts().index)
 
         trn_idx_list = []
         val_idx_list = []
         train_dict = {}
         valid_dict = {}
-        for df in df_list:
+        for term in term_list:
+            df  = train[train[col_term] == term]
+
             plus  = df[df[target] >= 0]
             tmp_minus = df[df[target] <  0]
             minus = tmp_minus[tmp_minus[target] >  -30]
@@ -365,10 +358,14 @@ for i, seed in enumerate(seed_list):
             minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
             out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
 
+
             folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
             kfold_plus = folds.split(plus, plus['outliers'].values)
             kfold_minus = folds.split(minus, minus['outliers'].values)
-            kfold_out = folds.split(out, out['outliers'].values)
+            if len(out):
+                kfold_out = folds.split(out, out['outliers'].values)
+            else:
+                kfold_out = zip(range(fold), range(fold))
 
             for fold_num, ((p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx), (o_trn_idx, o_val_idx)) in enumerate(zip(kfold_plus, kfold_minus, kfold_out)):
 
@@ -376,8 +373,12 @@ for i, seed in enumerate(seed_list):
                     ids = list(df.iloc[idx, :][key].values)
                     return ids
 
-                trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx) + get_ids(out, o_trn_idx)
-                val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
+                if len(out):
+                    trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx) + get_ids(out, o_trn_idx)
+                    val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
+                else:
+                    trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx)
+                    val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
 
                 # idをindexの番号にする
                 trn_ids = list(df[df[key].isin(trn_ids)].index)
@@ -517,7 +518,7 @@ for i, seed in enumerate(seed_list):
         ,early_stopping_rounds=early_stopping_rounds
         ,oof_flg=oof_flg
         ,self_kfold=kfold
-        #  ,comp_name='elo'
+        ,self_predict=self_predict
     )
 
     seed_pred += LGBM.prediction
@@ -561,11 +562,14 @@ logger.info(f'''
 
 #========================================================================
 # Part of card_id Score
-bench = pd.read_csv('../input/bench_LB3684_FAM_cv_score.csv')
+#  bench = pd.read_csv('../input/bench_LB3684_FAM_cv_score.csv')
+bench = utils.read_pkl_gzip('../stack/0206_125_stack_lgb_lr0.01_235feats_10seed_70leaves_iter1164_OUT29.8269_CV3-6215750935280235_LB.gz')[[key, 'pred_mean']].rename(columns={'pred_mean':'bench_pred'})
+df_pred = df_pred.merge(bench, on=key, how='inner')
 part_score_list = []
 part_N_list = []
 fam_list = []
 base_train['first_active_month'] = base_train['first_active_month'].map(lambda x: str(x)[:7])
+
 for i in range(201501, 201713, 1):
     fam = str(i)[:4] + '-' + str(i)[-2:]
     df_part = base_train[base_train['first_active_month']==fam]
@@ -574,16 +578,17 @@ for i in range(201501, 201713, 1):
     part_id_list = df_part[key].values
 
     part_train = df_pred.loc[df_pred[key].isin(part_id_list), :]
+
     y_train = part_train[target].values
     if 'pred_mean' in list(part_train.columns):
         y_pred = part_train['pred_mean'].values
     else:
         y_pred = part_train['prediction'].values
+    bench_pred = part_train['bench_pred'].values
 
-    y_pred = np.where(y_pred != y_pred, 0, y_pred)
     # RMSE
     part_score = np.sqrt(mean_squared_error(y_train, y_pred))
-    bench_score = bench[bench['FAM']==fam]['CV'].values[0]
+    bench_score = np.sqrt(mean_squared_error(y_train, bench_pred))
     part_score -= bench_score
 
     fam_list.append(fam)
@@ -648,43 +653,3 @@ except ValueError:
 except TypeError:
     pass
 #========================================================================
-
-#========================================================================
-# CV INFO
-
-try:
-    if int(sys.argv[2])==0 and len(train)>150000:
-
-        import re
-        path_list = glob.glob('../log_submit/0*CV*LB*.csv')
-        path_list.append(submit_path)
-        #  path_list_2 = glob.glob('../check_submit/*.csv')
-        #  path_list += path_list_2
-
-        tmp_list = []
-        path_list = list(set(path_list))
-        for path in path_list:
-            tmp = pd.read_csv(path)
-            tmp_path = path.replace(".", '-')
-            cv = re.search(r'CV([^/.]*)_LB', tmp_path).group(1).replace('-', '.')
-            lb = re.search(r'LB([^/.]*).csv', tmp_path).group(1).replace('-', '.')
-            #  if lb<'3.690' and path!=submit_path:
-            #      continue
-            tmp.rename(columns={'target':f"CV{cv[:9]}_LB{lb}"}, inplace=True)
-            tmp.set_index('card_id', inplace=True)
-            tmp_list.append(tmp.copy())
-
-        if len(tmp_list)>0:
-            df = pd.concat(tmp_list, axis=1)
-            df_corr = df.corr(method='pearson')
-
-            logger.info(f'''
-#========================================================================
-# OUTLIER FIT SCORE: {out_score}
-# SUBMIT CORRELATION:
-{df_corr[f'CV{str(cv_score)[:9]}_LB'].sort_values()}
-#========================================================================''')
-except ValueError:
-    pass
-except TypeError:
-    pass
