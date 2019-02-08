@@ -7,14 +7,155 @@ sys.path.append(f'{HOME}/kaggle/data_analysis/library')
 import utils
 
 
+#========================================================================
+# Term 
+#========================================================================
+def make_term_dist(base_term, multi, is_drop=True):
+
+    # ========================================================================
+    # Args
+    key = 'card_id'
+    target = 'target'
+    is_viz = False
+    result_id = []
+    term_name = f'term_{base_term}'
+    # ========================================================================
+
+    # ========================================================================
+    # Data Load
+    col_term = 'hist_regist_term'
+    base = utils.read_df_pkl('../input/base_term*0*')[[key, target, col_term]]
+    base[target] = base[target].map(lambda x: np.round(x, 1))
+    # ========================================================================
+    df_list = []
+
+    # 全体でのカウント
+    val_cnt = base[target].value_counts()
+    val_cnt.name = 'all'
+    df_list.append(val_cnt.copy())
+
+    df_base = base[base[col_term] == base_term]
+    val_cnt = df_base[target].value_counts()
+
+    # Termでのカウント
+    val_cnt.name = term_name
+    df_list.append(val_cnt)
+
+    def arange_ratio(df, multi, is_viz=False):
+        df[term_name] *= multi
+        df['diff'] = df['all'] - df[term_name]
+        diff_len = len(df[df['diff'] < 0])
+        if is_viz:
+            display(df[df['diff'] < 0])
+        if diff_len > limit_diff_num:
+            return -1
+        return 0
+
+    df = pd.concat(df_list, axis=1)
+
+    print(f"multi: {multi}")
+    df[term_name] *= multi
+    df_loy = df.dropna()
+    loy_list = list(df_loy.index)
+
+    # ========================================================================
+    # Sampling
+    # ========================================================================
+    before = 0
+    for i in loy_list:
+        loy = np.round(i, 1)
+        df_id = base[base[target] == loy]
+        if len(df_id) == 0:
+            continue
+        sample = df.loc[loy, term_name]
+        print(f"Target: {i} | SAMPLE: {sample}")
+        if sample == sample:
+            before = sample
+        else:
+            sample = before
+        sample = np.int(sample)
+        remain = sample
+        sampling_id = []
+
+        if remain==0:
+            continue
+
+        if is_viz:
+            print('''
+    #========================================================================
+    # Sampling Start!!
+    ''')
+
+        for i in range(100):
+
+            is_add = True
+            if i == 0:
+                term = base_term
+                tmp_id = df_id[df_id[col_term] == term]
+            else:
+                next_term = base_term + i + 1
+                tmp_id = df_id[df_id[col_term] == next_term]
+            # ========================================================================
+            # Sampling
+            id_list = list(tmp_id[key].values)
+            if len(id_list) <= remain:
+                sampling_id += id_list
+            else:
+                sampling_id += list(np.random.choice(id_list,
+                                                     remain, replace=False))
+
+            if is_viz:
+                print(f"sampling_id: {len(sampling_id)} / {sample}")
+            # ========================================================================
+
+            remain = sample - len(sampling_id)
+#             print(sample, len(sampling_id))
+            if remain <= 0:
+                break
+
+            if base_term>4:
+                next_term = base_term - i - 1
+                tmp_id = df_id[df_id[col_term] == next_term]
+            # ========================================================================
+            # Sampling
+            id_list = list(tmp_id[key].values)
+            if len(id_list) <= remain:
+                sampling_id += id_list
+            else:
+                sampling_id += list(np.random.choice(id_list,
+                                                     remain, replace=False))
+
+            if is_viz:
+                print(f"sampling_id: {len(sampling_id)} / {sample}")
+            # ========================================================================
+
+            remain = sample - len(sampling_id)
+#             print(sample, len(sampling_id))
+            if remain <= 0:
+                break
+
+
+        result_id += sampling_id
+        if is_viz:
+            print(f"loy:{loy} | {len(sampling_id)}/{sample} | All: {len(result_id)}")
+            print('''
+    # Sampling Complete!!
+    #========================================================================
+    ''')
+    print(f"All: {len(result_id)} | Unique: {len(np.unique(result_id))}")
+    print(base[base[key].isin(result_id)]
+            [col_term].value_counts().head())
+    print(base[base[key].isin(result_id)]['target'].value_counts().head())
+
+    return result_id
+
+
 
 # ========================================================================
 # First Month別にFitさせるにあたり、データセットの分布を各First Monthに揃える
 # ========================================================================
 
 def make_fam_dist(base_fam, multi, is_drop=False):
-    #  base_fam = '2017-12'
-    #  limit_diff_num = 5
 
     # ========================================================================
     # Args

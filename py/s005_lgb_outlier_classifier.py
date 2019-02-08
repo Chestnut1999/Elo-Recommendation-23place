@@ -1,18 +1,17 @@
 import gc
 import sys
 import pandas as pd
+from sklearn.model_selection import StratifiedKFold
 #========================================================================
 # Args
 #========================================================================
 key = 'card_id'
 target = 'target'
-ignore_list = [key, target, 'merchant_id', 'first_active_month']
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'hist_regist_term']
 
 win_path = f'../features/4_winner/*.gz'
 stack_name='outlier_classify'
 fname=''
-xray=False
-xray=True
 
 #========================================================================
 # argv[1] : model_type 
@@ -24,7 +23,7 @@ try:
     learning_rate = float(sys.argv[1])
 except IndexError:
     learning_rate = 0.01
-early_stopping_rounds = 150
+early_stopping_rounds = 200
 num_boost_round = 10000
 num_threads = 36
 
@@ -53,16 +52,50 @@ except NameError:
 model_type = 'lgb'
 params = params_elo()[1]
 params['learning_rate'] = learning_rate
+# Best outlier fit LB3.690
+#  num_leaves = 4
+#  num_leaves = 16
+num_leaves = 31
 num_leaves = 48
-#  num_leaves = 63
+num_leaves = 59
+num_leaves = 61
+num_leaves = 68
+num_leaves = 70
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
-if num_leaves>40:
-    params['num_leaves'] = num_leaves
+if num_leaves>=70:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.325582
+    params['min_child_samples'] = 30
+    params['lambda_l2'] = 7
+elif num_leaves>65:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.2755158
+    params['min_child_samples'] = 37
+    params['lambda_l2'] = 7
+
+elif num_leaves>60:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.2792
+    params['min_child_samples'] = 59
+    params['lambda_l2'] = 2
+
+elif num_leaves>50:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.256142
+    params['min_child_samples'] = 55
+    params['lambda_l2'] = 3
+
+elif num_leaves>40:
     params['subsample'] = 0.8757099996397999
     #  params['colsample_bytree'] = 0.7401342964627846
     params['colsample_bytree'] = 0.3
-    params['min_child_samples'] = 61
+    params['min_child_samples'] = 50
+
+else:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.3
+    params['min_child_samples'] = 30
 
 
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
@@ -72,20 +105,18 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 
 win_path = f'../features/4_winner/*.gz'
+win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
+#  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
+win_path_list = glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(win_path)
 
-base = utils.read_df_pkl('../input/base_first*')
+col_term = 'hist_regist_term'
+base = utils.read_df_pkl('../input/base_term*')[[key, 'first_active_month', target, col_term]]
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 
-win_path_list = glob.glob(win_path) + tmp_path_list
 feature_list = utils.parallel_load_data(path_list=win_path_list)
-
-# サイズチェック
-#  for f in feature_list:
-#      if f.shape[0]>330000:
-#          print(f.name)
-#  sys.exit()
 
 df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
@@ -110,8 +141,9 @@ train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
 metric = 'auc'
 params['objective'] = 'binary'
 params['metric'] = metric
-fold=5
-fold_type='kfold'
+fold=6
+fold_type='stratified'
+fold_type='self'
 group_col_name=''
 dummie=1
 oof_flg=True
@@ -122,6 +154,32 @@ train, test, drop_list = LGBM.data_check(train=train, test=test, target=target)
 #      train.drop(drop_list, axis=1, inplace=True)
 #      test.drop(drop_list, axis=1, inplace=True)
 
+train[col_term] = train[col_term].map(lambda x: 
+                                          6 if 6<=x and x<=8  else 
+                                          9 if 9<=x and x<=12
+                                          else x
+                                         )
+
+outlier_thres = -3
+term4  = train[train[col_term] == 4]
+term5  = train[train[col_term] == 5]
+term6  = train[train[col_term] == 6]
+term9  = train[train[col_term] == 9]
+term15  = train[train[col_term] == 15]
+term18  = train[train[col_term] == 18]
+term24  = train[train[col_term] == 24]
+
+df_list = [
+term4    
+,term5 
+,term6    
+,term9    
+,term15   
+,term18   
+,term24   
+]
+
+
 #========================================================================
 # seed_avg
 seed_pred = np.zeros(len(test))
@@ -130,6 +188,46 @@ for i, seed in enumerate(seed_list):
 
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
+
+    if key not in train.columns:
+        train.reset_index(inplace=True)
+        test.reset_index(inplace=True)
+
+    #========================================================================
+    # Validation Set
+    trn_idx_list = []
+    val_idx_list = []
+    train_dict = {}
+    valid_dict = {}
+    for df in df_list:
+
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        kfold = folds.split(df, df[target].values)
+
+        for fold_num, (p_trn_idx, p_val_idx) in enumerate(kfold):
+
+            def get_ids(df, idx):
+                ids = list(df.iloc[idx, :][key].values)
+                return ids
+
+            trn_ids = get_ids(df, p_trn_idx)
+            val_ids = get_ids(df, p_val_idx)
+
+            # idをindexの番号にする
+            trn_ids = list(train[train[key].isin(trn_ids)].index)
+            val_ids = list(train[train[key].isin(val_ids)].index)
+
+    #         trn_idx_list.append(trn_ids)
+    #         val_idx_list.append(val_ids)
+            if fold_num not in train_dict:
+                train_dict[fold_num] = trn_ids
+                valid_dict[fold_num] = val_ids
+            else:
+                train_dict[fold_num] += trn_ids
+                valid_dict[fold_num] += val_ids
+        print(len(np.unique(train_dict[fold_num])), len(np.unique(valid_dict[fold_num])))
+    kfold = list(zip(train_dict.values(), valid_dict.values()))
+    #========================================================================
 
 #========================================================================
 # Train & Prediction Start
@@ -146,6 +244,7 @@ for i, seed in enumerate(seed_list):
         ,num_boost_round=num_boost_round
         ,early_stopping_rounds=early_stopping_rounds
         ,oof_flg=oof_flg
+        ,self_kfold=kfold
     )
 
     seed_pred += LGBM.prediction

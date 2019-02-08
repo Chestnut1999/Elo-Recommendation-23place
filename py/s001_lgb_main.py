@@ -1,6 +1,6 @@
-out_part = ['', 'part', 'all'][0]
+out_part = ['', 'no_out', 'all'][0]
 outlier_thres = -3
-num_threads = 36
+num_threads = 32
 import sys
 import pandas as pd
 
@@ -9,7 +9,8 @@ import pandas as pd
 #========================================================================
 key = 'card_id'
 target = 'target'
-ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term']
+col_term = 'hist_regist_term'
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term]
 
 stack_name='en_route'
 fname=''
@@ -17,7 +18,6 @@ xray=False
 #  xray=True
 submit = pd.read_csv('../input/sample_submission.csv')
 #  submit = []
-
 
 model_type='lgb'
 try:
@@ -63,9 +63,15 @@ num_leaves = 59
 num_leaves = 61
 num_leaves = 68
 num_leaves = 70
+num_leaves = 71
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
-if num_leaves>=70:
+if num_leaves==71:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.3180226
+    params['min_child_samples'] = 31
+    params['lambda_l2'] = 14
+elif num_leaves==70:
     params['subsample'] = 0.9
     params['colsample_bytree'] = 0.325582
     params['min_child_samples'] = 30
@@ -105,20 +111,24 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 
 win_path = f'../features/4_winner/*.gz'
-tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
+win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
+#  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
+tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
+win_path_list = glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(win_path)
 
-base = utils.read_df_pkl('../input/base_first*')
+base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month']]
+base[col_term] = base[col_term].map(lambda x: 
+                                          6 if 6<=x and x<=8  else 
+                                          9 if 9<=x and x<=12
+                                          else x
+                                         )
+
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 
-win_path_list = glob.glob(win_path) + tmp_path_list
 feature_list = utils.parallel_load_data(path_list=win_path_list)
 
-# サイズチェック
-#  for f in feature_list:
-#      if f.shape[0]>330000:
-#          print(f.name)
-#  sys.exit()
 
 df_feat = pd.concat(feature_list, axis=1)
 
@@ -144,6 +154,8 @@ else:
 y = train[target].values
 
 
+if out_part=='no_out':
+    train = train[train[target]>-30]
 
 #========================================================================
 
@@ -161,7 +173,7 @@ except IndexError:
 metric = 'rmse'
 #  metric = 'mse'
 params['metric'] = metric
-fold=5
+fold=6
 fold_type='self'
 #  fold_type='stratified'
 group_col_name=''
@@ -317,6 +329,69 @@ for i, seed in enumerate(seed_list):
         folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
         kfold = list(folds.split(train,train['outliers'].values))
         train.drop('outliers', axis=1, inplace=True)
+
+    elif sys.argv[4]=='term':
+        outlier_thres = -3
+        term4  = train[train[col_term] == 4]
+        term5  = train[train[col_term] == 5]
+        term6  = train[train[col_term] == 6]
+        term9  = train[train[col_term] == 9]
+        term15  = train[train[col_term] == 15]
+        term18  = train[train[col_term] == 18]
+        term24  = train[train[col_term] == 24]
+
+        df_list = [
+        term4
+        ,term5
+        ,term6
+        ,term9
+        ,term15
+        ,term18
+        ,term24
+        ]
+
+
+        trn_idx_list = []
+        val_idx_list = []
+        train_dict = {}
+        valid_dict = {}
+        for df in df_list:
+            plus  = df[df[target] >= 0]
+            tmp_minus = df[df[target] <  0]
+            minus = tmp_minus[tmp_minus[target] >  -30]
+            out = tmp_minus[tmp_minus[target] <  -30]
+
+            plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
+            minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
+            out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
+
+            folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+            kfold_plus = folds.split(plus, plus['outliers'].values)
+            kfold_minus = folds.split(minus, minus['outliers'].values)
+            kfold_out = folds.split(out, out['outliers'].values)
+
+            for fold_num, ((p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx), (o_trn_idx, o_val_idx)) in enumerate(zip(kfold_plus, kfold_minus, kfold_out)):
+
+                def get_ids(df, idx):
+                    ids = list(df.iloc[idx, :][key].values)
+                    return ids
+
+                trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx) + get_ids(out, o_trn_idx)
+                val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
+
+                # idをindexの番号にする
+                trn_ids = list(df[df[key].isin(trn_ids)].index)
+                val_ids = list(df[df[key].isin(val_ids)].index)
+
+                if fold_num not in train_dict:
+                    train_dict[fold_num] = trn_ids
+                    valid_dict[fold_num] = val_ids
+                else:
+                    train_dict[fold_num] += trn_ids
+                    valid_dict[fold_num] += val_ids
+            print(len(train_dict[fold_num]), len(valid_dict[fold_num]))
+        kfold = list(zip(train_dict.values(), valid_dict.values()))
+
     elif sys.argv[4]=='ods':
 
         #========================================================================
@@ -344,6 +419,77 @@ for i, seed in enumerate(seed_list):
         fold = 6
         folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
         kfold = folds.split(train, train[target].values)
+
+    elif sys.argv[4]=='ods_term':
+
+        outlier_thres = -3
+        term4  = train[train[col_term] == 4]
+        term5  = train[train[col_term] == 5]
+        term6  = train[train[col_term] == 6]
+        term9  = train[train[col_term] == 9]
+        term15  = train[train[col_term] == 15]
+        term18  = train[train[col_term] == 18]
+        term24  = train[train[col_term] == 24]
+
+        df_list = [
+        term4
+        ,term5
+        ,term6
+        ,term9
+        ,term15
+        ,term18
+        ,term24
+        ]
+
+
+        fold_type = 'self'
+        trn_idx_list = []
+        val_idx_list = []
+        train_dict = {}
+        valid_dict = {}
+
+        for df_term in df_list:
+
+            df_term['rounded_target'] = df_term['target'].round(0)
+            df_term = df_term.sort_values('rounded_target').reset_index(drop=True)
+            vc = df_term['rounded_target'].value_counts()
+            vc = dict(sorted(vc.items()))
+            df = pd.DataFrame()
+            df_term['indexcol'],idx = 0,1
+            for k,v in vc.items():
+                step = df_term.shape[0]/v
+                indent = df_term.shape[0]/(v+1)
+                df2 = df_term[df_term['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
+                for j in range(0, v):
+                    df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
+                df = pd.concat([df2,df])
+                idx+=1
+            df_term = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
+            del df_term['indexcol'], df_term['rounded_target']
+            folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
+            kfold = folds.split(df_term, df_term[target].values)
+
+            for fold_num, (p_trn_idx, p_val_idx) in enumerate(kfold):
+
+                def get_ids(df, idx):
+                    ids = list(df.iloc[idx, :][key].values)
+                    return ids
+
+                trn_ids = get_ids(df_term, p_trn_idx)
+                val_ids = get_ids(df_term, p_val_idx)
+
+                # idをindexの番号にする
+                trn_ids = list(train[train[key].isin(trn_ids)].index)
+                val_ids = list(train[train[key].isin(val_ids)].index)
+
+                if fold_num not in train_dict:
+                    train_dict[fold_num] = trn_ids
+                    valid_dict[fold_num] = val_ids
+                else:
+                    train_dict[fold_num] += trn_ids
+                    valid_dict[fold_num] += val_ids
+            print(len(np.unique(train_dict[fold_num])), len(np.unique(valid_dict[fold_num])))
+        kfold = list(zip(train_dict.values(), valid_dict.values()))
 
 
     # 3. Default KFold
@@ -419,7 +565,7 @@ bench = pd.read_csv('../input/bench_LB3684_FAM_cv_score.csv')
 part_score_list = []
 part_N_list = []
 fam_list = []
-#  for i in range(201101, 201713, 1):
+base_train['first_active_month'] = base_train['first_active_month'].map(lambda x: str(x)[:7])
 for i in range(201501, 201713, 1):
     fam = str(i)[:4] + '-' + str(i)[-2:]
     df_part = base_train[base_train['first_active_month']==fam]
