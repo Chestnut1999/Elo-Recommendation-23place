@@ -1,4 +1,4 @@
-out_part = ['', 'no_out', 'all'][1]
+out_part = ['', 'no_out', 'all'][0]
 outlier_thres = -3
 num_threads = 32
 num_threads = 36
@@ -114,7 +114,8 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 
 win_path = f'../features/4_winner/*.gz'
-win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
+win_path = f'../features/1_first_valid/*.gz'
+#  win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
 #  win_path = f'../model/LB3679_48leaves_colsam03/*.gz'
 #  win_path = f'../model/LB3684_48leaves_colsam03/*.gz'
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
