@@ -37,6 +37,7 @@ num_boost_round = 5000
 import numpy as np
 import datetime
 import glob
+import re
 import gc
 import os
 from sklearn.metrics import mean_squared_error
@@ -706,18 +707,19 @@ except TypeError:
 #========================================================================
 # Corr
 base = utils.read_df_pkl('../input/base_term*')[[key, target]].set_index(key)
-best_model_path = '../stack/0206_125_stack_lgb_lr0.01_235feats_10seed_70leaves_iter1164_OUT29.8269_CV3-6215750935280235_LB.gz'
-best_model = utils.read_pkl_gzip(best_model_path)[[key, 'pred_mean']].set_index(key)
-# Indexをそろえる
-base = base.join(best_model)
-best_pred = base['pred_mean'].values
+ens_list = glob.glob('../ensemble/*.gz')
 
 if 'pred_mean' in df_pred.columns:
     base['this_pred'] = df_pred.set_index(key)['pred_mean']
 else:
     base['this_pred'] = df_pred.set_index(key)['prediction']
-y_pred = base['pred_mean'].values
+
 # 相関
-corr = np.corrcoef(best_pred, base['this_pred'].values).min()
-logger.info(f"WITH BEST MODEL CORR: {corr}")
+for i, path in enumerate(ens_list):
+
+    ens_model = utils.read_pkl_gzip(path)[[key, 'pred_mean']].set_index(key)
+    base['ens_pred'] = ens_model['pred_mean']
+    cv_score = re.search(r'CV([^/.]*)_LB.gz', path).group(1)
+    corr = np.corrcoef(base['ens_pred'], base['this_pred'].values).min()
+    logger.info(f"WITH CV{cv_score[:6]} CORR: {corr}")
 #========================================================================

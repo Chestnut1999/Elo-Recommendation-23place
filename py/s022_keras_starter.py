@@ -1,341 +1,211 @@
-out_part = ['', 'part', 'all'][0]
-outlier_thres = -3
-num_threads = 36
-import sys
-import pandas as pd
-from keras.layers import Dense, BatchNormalization, Dropout, Input
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-from keras.models import Sequential
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, Imputer
-
-#========================================================================
-# Args
-#========================================================================
-key = 'card_id'
-target = 'target'
-ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term']
-
-stack_name='en_route'
-fname=''
-submit = pd.read_csv('../input/sample_submission.csv')
-
-
-model_type='keras'
-
-import numpy as np
-import datetime
-import glob
+debug = True
 import gc
+import re
+import pandas as pd
+import numpy as np
 import os
-from sklearn.metrics import mean_squared_error
-HOME = os.path.expanduser('~')
-
-sys.path.append(f'{HOME}/kaggle/data_analysis/model')
-sys.path.append(f'{HOME}/kaggle/data_analysis')
-sys.path.append(f"{HOME}/kaggle/data_analysis/library/")
+import sys
+import time
+import glob
+HOME = os.path.expanduser("~")
+sys.path.append(f'{HOME}/kaggle/data_analysis/library')
 import utils
-from preprocessing import get_ordinal_mapping
-from utils import logger_func
+from utils import logger_func, get_categorical_features, get_numeric_features, reduce_mem_usage, elo_save_feature, impute_feature
 try:
     if not logger:
         logger=logger_func()
 except NameError:
     logger=logger_func()
 
-params = params_elo()[1]
-params['subsample'] = 0.9
-params['colsample_bytree'] = 0.3
-params['min_child_samples'] = 30
-
-start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 
 #========================================================================
-# Data Load
+# Keras 
+# Corporación Favorita Grocery Sales Forecasting
+sys.path.append(f'{HOME}/kaggle/data_analysis/model')
+from nn_keras import elo_build_NN
+from keras import callbacks
+from keras import optimizers
+from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+#========================================================================
 
+
+#========================================================================
+# Args
+out_part = ['', 'part', 'all'][0]
+key = 'card_id'
+target = 'target'
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', 'no_out_flg']
+stack_name='keras'
+submit = pd.read_csv('../input/sample_submission.csv')
+model_type='keras'
+start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
+#========================================================================
+
+
+#========================================================================
+# Data Load 
+print("Preparing dataset...")
 win_path = f'../features/4_winner/*.gz'
-tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
+win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
+# win_path_list = glob.glob(win_path) + glob.glob('../features/5_tmp/*.gz')
+win_path_list = glob.glob(win_path)
 
-base = utils.read_df_pkl('../input/base_first*')
+base = utils.read_df_pkl('../input/base_term*0*')[[key, target, 'first_active_month']]
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
-
-win_path_list = glob.glob(win_path) + tmp_path_list
 feature_list = utils.parallel_load_data(path_list=win_path_list)
+df = pd.concat(feature_list, axis=1)
+train = pd.concat([base_train, df.iloc[:len(base_train), :]], axis=1)
+test = pd.concat([base_test, df.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
 
-# サイズチェック
-#  for f in feature_list:
-#      if f.shape[0]>330000:
-#          print(f.name)
-#  sys.exit()
-
-df_feat = pd.concat(feature_list, axis=1)
-
-
-train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
-test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
-
-
-#========================================================================
-
-#========================================================================
-# Setting
-try:
-    argv3 = int(sys.argv[3])
-    seed_list = np.arange(argv3)
-    if argv3<=10:
-        seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005, 2019][:argv3]
-        #  seed_list = [328, 605, 1212, 1222, 405, 1128, 1012, 1208, 2005, 2019][:argv3]
-except IndexError:
-    seed_list = [1208]
-    #  seed_list = [328]
-metric = 'rmse'
-#  metric = 'mse'
-params['metric'] = metric
-fold=5
-fold_type='self'
-#  fold_type='stratified'
-group_col_name=''
-dummie=1
-oof_flg=True
-
-from sklearn.model_selection import StratifiedKFold, KFold
-
-
-# seed_avg
-seed_pred = np.zeros(len(test))
-cv_list = []
-iter_list = []
-model_list = []
 train.reset_index(inplace=True, drop=True)
 test.reset_index(inplace=True , drop=True)
-for i, seed in enumerate(seed_list):
 
-    if key not in train.columns:
-        train.reset_index(inplace=True)
-    if key not in test.columns:
-        test.reset_index(inplace=True)
-
-    LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
-    LGBM.seed = seed
-
-    #  if i>=5:
-    #      params['num_leaves'] = 48
-    #      params['subsample'] = 0.8757099996397999
-    #      params['colsample_bytree'] = 0.7401342964627846
-    #      params['min_child_samples'] = 61
-
-    #========================================================================
-    # Validation Setting vvv
-    # Validation Set はFitさせたいFirst month のグループに絞る
-    # 1. マイナスでOutlierの閾値を切って、それらの分布が揃う様にKFoldを作る
-    if sys.argv[4]=='minus':
-        train['outliers'] = train[target].map(lambda x: 1 if x < outlier_thres else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold = folds.split(train,train['outliers'].values)
-        train.drop('outliers', axis=1, inplace=True)
-
-    # 2. プラスマイナスでOutlierの閾値を切って、プラス、マイナス別に分布が揃う様にKFoldを作る
-    elif sys.argv[4]=='pmo':
-        plus  = train[train[target] >= 0]
-        tmp_minus = train[train[target] <  0]
-        minus = tmp_minus[tmp_minus[target] >  -30]
-        out = tmp_minus[tmp_minus[target] <  -30]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-        out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-        kfold_out = folds.split(out, out['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx), (o_trn_idx, o_val_idx) in zip(kfold_plus, kfold_minus, kfold_out):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx) + get_ids(out, o_trn_idx)
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
-
-            # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-        kfold = zip(trn_idx_list, val_idx_list)
-
-    elif sys.argv[4]=='pm':
-        plus  = train[train[target] >= 0]
-        tmp_minus = train[train[target] <  0]
-        minus = tmp_minus[tmp_minus[target] >  -30]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx) in zip(kfold_plus, kfold_minus):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx)
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
-
-            # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-        kfold = zip(trn_idx_list, val_idx_list)
-
-
-    elif sys.argv[4]=='fmpm':
-
-        train.reset_index(drop=True, inplace=True)
-        fm_train = train[train[key].isin(train_latest_id_list)].reset_index(drop=True)
-        plus  = fm_train[fm_train[target] >= 0]
-        minus = fm_train[fm_train[target] <  0]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx) in zip(kfold_plus, kfold_minus):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
-            trn_ids = list(set(list(train[key].values)) - set(val_ids))
-
-            # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-
-        kfold = zip(trn_idx_list, val_idx_list)
-
-    elif sys.argv[4]=='out':
-        train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold = list(folds.split(train,train['outliers'].values))
-        train.drop('outliers', axis=1, inplace=True)
-    elif sys.argv[4]=='ods':
-
-        #========================================================================
-        # ods.ai 3rd kernel
-        # https://www.kaggle.com/c/elo-merchant-category-recommendation/discussion/78903
-        # KFold: n_splits=6(or 7)!, shuffle=False!
-        #========================================================================
-        train['rounded_target'] = train['target'].round(0)
-        train = train.sort_values('rounded_target').reset_index(drop=True)
-        vc = train['rounded_target'].value_counts()
-        vc = dict(sorted(vc.items()))
-        df = pd.DataFrame()
-        train['indexcol'],idx = 0,1
-        for k,v in vc.items():
-            step = train.shape[0]/v
-            indent = train.shape[0]/(v+1)
-            df2 = train[train['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
-            for j in range(0, v):
-                df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
-            df = pd.concat([df2,df])
-            idx+=1
-        train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
-        del train['indexcol'], train['rounded_target']
-        fold_type = 'self'
-        fold = 6
-        folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
-        kfold = folds.split(train, train[target].values)
-
-
-    # 3. Default KFold
-    else:
-        kfold = False
-        fold_type = 'kfold'
-    #========================================================================
-
-    train.sort_index(axis=1, inplace=True)
-    test.sort_index(axis=1, inplace=True)
-
-    #========================================================================
-    # Train & Prediction Start
-    #========================================================================
-    LGBM = LGBM.cross_prediction(
-        train=train
-        ,test=test
-        ,key=key
-        ,target=target
-        ,fold_type=fold_type
-        ,fold=fold
-        ,group_col_name=group_col_name
-        ,params=params
-        ,num_boost_round=num_boost_round
-        ,early_stopping_rounds=early_stopping_rounds
-        ,oof_flg=oof_flg
-        ,self_kfold=kfold
-        #  ,comp_name='elo'
-    )
-
-    seed_pred += LGBM.prediction
-
-    if i==0:
-        cv_list.append(LGBM.cv_score)
-        iter_list.append(LGBM.iter_avg)
-        cv_feim = LGBM.cv_feim
-        feature_num = len(LGBM.use_cols)
-        df_pred = LGBM.result_stack.copy()
-    else:
-        cv_score = LGBM.cv_score
-        cv_list.append(cv_score)
-        iter_list.append(LGBM.iter_avg)
-        LGBM.cv_feim.columns = [col if col.count('feature') else f"{col}_{seed}" for col in LGBM.cv_feim.columns]
-        cv_feim = cv_feim.merge(LGBM.cv_feim, how='inner', on='feature')
-        df_pred = df_pred.merge(LGBM.result_stack[[key, 'prediction']].rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
-
+if debug:
+    train = train.head(10000)
+    test = test.head(2000)
+#========================================================================
 
 #========================================================================
-# STACKING
-if len(stack_name)>0:
-    logger.info(f'result_stack shape: {df_pred.shape}')
-    if len(seed_list)>1:
-        pred_cols = [col for col in df_pred.columns if col.count('predict')]
-        df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
-        df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
+# 正規化の前処理(Null埋め, inf, -infの処理) 
+for col in train.columns:
+    if col in ignore_list: continue
+        
+    train[col] = impute_feature(train, col)
+    test[col] = impute_feature(test, col)
+#========================================================================
+
+#========================================================================
+# ods.ai 3rd kernel
+# https://www.kaggle.com/c/elo-merchant-category-recommendation/discussion/78903
+# KFold: n_splits=6(or 7)!, shuffle=False!
+train['rounded_target'] = train['target'].round(0)
+train = train.sort_values('rounded_target').reset_index(drop=True)
+vc = train['rounded_target'].value_counts()
+vc = dict(sorted(vc.items()))
+df = pd.DataFrame()
+train['indexcol'],idx = 0,1
+for k,v in vc.items():
+    step = train.shape[0]/v
+    indent = train.shape[0]/(v+1)
+    df2 = train[train['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
+    for j in range(0, v):
+        df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
+    df = pd.concat([df2,df])
+    idx+=1
+train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
+del train['indexcol'], train['rounded_target']
+fold_type = 'self'
+fold = 6
+folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
+kfold = folds.split(train, train[target].values)
+# =======================================================================
+
+#========================================================================
+# CVの準備
+result_list = []
+score_list = []
+val_pred_list = []
+test_pred = np.zeros(len(test))
+
+N_EPOCHS = 30
+# batch_size = 65536
+batch_size = 128
+learning_rate = 0.001
+
+use_cols = [col for col in train.columns if col not in ignore_list]
+scaler = StandardScaler()
+scaler.fit(pd.concat([train[use_cols], test[use_cols]]))
+test[:] = scaler.transform(test[use_cols])
+test = test.as_matrix()
+test = test.reshape((test.shape[0], 1, test.shape[1]))
+
+Y = train[target]
+y_mean = Y.mean()
+#========================================================================
+    
+#========================================================================
+# NN Model Setting 
+model = build_model()
+opt = optimizers.Adam(lr=learning_rate)
+model.compile(loss=RMSE, optimizer=opt, metrics=[RMSE])
+
+callbacks = [
+    EarlyStopping(monitor='val_loss', patience=10, verbose=0),
+    ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=7, verbose=1, epsilon=1e-4, mode='min')
+]
 #========================================================================
 
 
 #========================================================================
-# Result
-cv_score = np.mean(cv_list)
-iter_avg = np.int(np.mean(iter_list))
-#========================================================================
+# Train & Prediction Start
 
+for fold_no, (trn_idx, val_idx) in kfold:
+
+    #========================================================================
+    # Make Dataset
+#     X_train, X_val = train_test_split(train, test_size=0.2)
+    X_train, y_train = train.iloc[trn_idx, :][use_cols], Y.iloc[trn_idx]
+    X_val, y_val = train.iloc[val_idx, :][use_cols], Y.iloc[val_idx]
+    
+     
+    X_train[:] = scaler.transform(X_train)
+    X_val[:] = scaler.transform(X_val)
+    X_train = X_train.as_matrix()
+    X_val = X_val.as_matrix()
+    X_train = X_train.reshape((X_train.shape[0], 1, X_train.shape[1]))
+    X_val = X_val.reshape((X_val.shape[0], 1, X_val.shape[1]))
+    #========================================================================
+    
+    # Fitting
+    # なぜか平均を引いてる？そのほうがfitするの？
+    # model.fit(X_train, y- y_mean, batch_size = batch_size, epochs = N_EPOCHS, verbose=2,
+    #            validation_data=(X_val, y_val - y_mean), callbacks=callbacks )
+    model.fit(X_train, y_train, batch_size = batch_size, epochs = N_EPOCHS, verbose=2,
+               validation_data=(X_val, y_val), callbacks=callbacks )
+    
+    # Prediction
+    y_pred = model.predict(X_val)
+    y_pred = y_pred.reshape(y_pred.shape[1], )
+    tmp_pred = model.predict(test)
+    test_pred += test_pred.reshape(test_pred.shape[1], )
+    
+    # Stack Prediction
+    df_pred = train.iloc[val_idx, :][[key, target]].copy()
+    df_pred['prediction'] = y_pred
+    result_list.append(df_pred)
+    
+    # Scoring
+    err = (y_val - y_pred)
+    score = np.sqrt(mean_squared_error(y_val, y_pred))
+    print(f'RMSE: {score} | SUM ERROR: {err.sum()}')
+    score_list.append(score)
+    #========================================================================
+
+cv_score = np.mean(score_list)
 logger.info(f'''
 #========================================================================
-# {len(seed_list)}SEED CV SCORE AVG: {cv_score}
+# CV SCORE AVG: {cv_score}
 #========================================================================''')
+
+#========================================================================
+# Stacking
+test_pred /= fold
+test['prediction'] = test_pred
+stack_test = test[[key, 'prediction']]
+result_list.append(stack_test)
+df_pred = pd.concat(result_list, axis=0, ignore_index=True).drop(target, axis=1)
+df_pred = base.merge(df_pred, how='inner', on=key)
+print(f"Stacking Shape: {df_pred.shape}")
+
+utils.to_pkl_gzip(obj=df_pred, path=f'../output/{start_time[4:11]}_elo_NN_stack_CV{score}')
+#========================================================================
+
+
+sys.exit()
 
 #========================================================================
 # Part of card_id Score
