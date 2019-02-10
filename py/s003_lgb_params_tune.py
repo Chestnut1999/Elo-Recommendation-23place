@@ -49,6 +49,7 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 
 win_path = f'../features/4_winner/*.gz'
+model_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 
 base = utils.read_df_pkl('../input/base_first*')
@@ -56,6 +57,7 @@ base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 
 win_path_list = glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(model_path) + glob.glob(win_path)
 feature_list = utils.parallel_load_data(path_list=win_path_list)
 
 df_feat = pd.concat(feature_list, axis=1)
@@ -69,8 +71,9 @@ train_id = train[key].values
 #========================================================================
 # LGBM Setting
 seed = 1208
+seed = 328
 metric = 'rmse'
-fold=5
+fold=6
 fold_type='self'
 group_col_name=''
 dummie=1
@@ -100,7 +103,7 @@ train['indexcol'],idx = 0,1
 for k,v in vc.items():
     step = train.shape[0]/v
     indent = train.shape[0]/(v+1)
-    df2 = train[train['rounded_target'] == k].sample(v, random_state=1208).reset_index(drop=True)
+    df2 = train[train['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
     for j in range(0, v):
         df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
     df = pd.concat([df2,df])
@@ -109,7 +112,7 @@ train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
 del train['indexcol'], train['rounded_target']
 fold_type = 'self'
 fold = 6
-folds = KFold(n_splits=fold, shuffle=False, random_state=1208)
+folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
 kfold = list(folds.split(train, train[target].values))
 #========================================================================
 

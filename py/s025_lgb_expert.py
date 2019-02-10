@@ -1,12 +1,9 @@
+out_part = ['', 'no_out', 'all'][0]
 outlier_thres = -3
 num_threads = 32
-#  num_threads = 36
+num_threads = 36
 import sys
 import pandas as pd
-try:
-    out_part = sys.argv[5]
-except IndexError:
-    out_part = ['', 'no_out', 'all'][0]
 
 #========================================================================
 # Args
@@ -16,14 +13,10 @@ target = 'target'
 col_term = 'hist_regist_term'
 no_flg = 'no_out_flg'
 ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term, no_flg]
-#  ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term]
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term]
 
 stack_name='en_route'
 fname=''
-xray=False
-#  xray=True
-submit = pd.read_csv('../input/sample_submission.csv')
-#  submit = []
 
 model_type='lgb'
 try:
@@ -65,7 +58,6 @@ params['learning_rate'] = learning_rate
 #  num_leaves = 16
 num_leaves = 31
 num_leaves = 48
-num_leaves = 57
 #  num_leaves = 59
 #  num_leaves = 61
 #  num_leaves = 68
@@ -95,12 +87,6 @@ elif num_leaves>60:
     params['min_child_samples'] = 59
     params['lambda_l2'] = 2
 
-elif num_leaves==57:
-    params['subsample'] = 0.9
-    params['colsample_bytree'] = 0.2513
-    params['min_child_samples'] = 32
-    params['lambda_l2'] = 9
-
 elif num_leaves>50:
     params['subsample'] = 0.9
     params['colsample_bytree'] = 0.256142
@@ -125,22 +111,16 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 win_path = f'../features/4_winner/*.gz'
 #  win_path = f'../features/1_first_valid/*.gz'
-#  model_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
+#  win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
 #  win_path = f'../model/LB3679_48leaves_colsam03/*.gz'
 #  win_path = f'../model/LB3684_48leaves_colsam03/*.gz'
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
-#  win_path_list = glob.glob(model_path) + glob.glob(win_path) + glob.glob(f'../features/5_tmp/*.gz')
-#  win_path_list = glob.glob(model_path)
 win_path_list = glob.glob(win_path) + tmp_path_list
+#  win_path_list = glob.glob(win_path)
 
-base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month', no_flg]]
-base[no_flg].fillna(0, inplace=True)
-#  base[col_term] = base[col_term].map(lambda x:
-#                                            6 if 6<=x and x<=8  else
-#                                            9 if 9<=x and x<=12
-#                                            else x
-#                                           )
+base = utils.read_df_pkl('../input/base_term*0*')[[key, target, col_term, 'first_active_month']]
+fam_base = utils.read_df_pkl('../input/fam_165_176*0*')[[key, target]]
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
@@ -153,22 +133,15 @@ df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
 
-#  try:
-#      train = train[train[no_flg]!=1]
-#      test = test[test[no_flg]!=1]
-#      base_train = base_train[base_train[no_flg]!=1]
-#      base_teset = base_test[base_test[no_flg]!=1]
-#  except IndexError:
-#      pass
+# Stack用に全量データをもっておく
+self_predict = train.copy()
+self_predict.reset_index(inplace=True, drop=True)
+
+# FAMを絞る
+fam = 'first_active_month'
+train = fam_base.merge(train.drop([target], axis=1), on=key, how='inner')
 y = train[target].values
 
-
-if out_part=='no_out':
-    self_predict = train.copy()
-    self_predict.reset_index(inplace=True, drop=True)
-    train = train[train[target]>-30]
-else:
-    self_predict = []
 
 #========================================================================
 
@@ -181,7 +154,7 @@ try:
         seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005, 2019][:argv3]
         seed_list = [328, 605, 1212, 1222, 405, 1128, 1012, 1208, 2005, 2019][:argv3]
 except IndexError:
-    seed_list = [1208]
+    #  seed_list = [1208]
     seed_list = [328]
 metric = 'rmse'
 #  metric = 'mse'
@@ -221,11 +194,6 @@ for i, seed in enumerate(seed_list):
     LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
     LGBM.seed = seed
 
-    #  if i>=5:
-    #      params['num_leaves'] = 48
-    #      params['subsample'] = 0.8757099996397999
-    #      params['colsample_bytree'] = 0.7401342964627846
-    #      params['min_child_samples'] = 61
 
     #========================================================================
     # Validation Setting vvv
@@ -616,11 +584,7 @@ logger.info(f'''
 
 #========================================================================
 # Term
-part_score_list = []
-part_N_list = []
-fam_list = []
-term_list = sorted(list(base_train['hist_regist_term'].value_counts().index))
-for term in term_list:
+for term in range(4, 25, 1):
     df_part = base_train[base_train['hist_regist_term']==term]
     if len(df_part)<1:
         continue
@@ -657,19 +621,16 @@ logger.info(f'''
 #========================================================================
 
 
-if len(train)>150000:
-    if len(train[train[target]<-30])>0:
-        # outlierに対するスコアを出す
-        train.reset_index(inplace=True)
-        out_ids = train.loc[train.target<-30, key].values
-        out_val = train.loc[train.target<-30, target].values
-        if len(seed_list)==1:
-            out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
-        else:
-            out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
-        out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+if len(train[train[target]<-30])>0:
+    # outlierに対するスコアを出す
+    train.reset_index(inplace=True)
+    out_ids = train.loc[train.target<-30, key].values
+    out_val = train.loc[train.target<-30, target].values
+    if len(seed_list)==1:
+        out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
     else:
-        out_score = 0
+        out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
+    out_score = np.sqrt(mean_squared_error(out_val, out_pred))
 else:
     out_score = 0
 
@@ -689,19 +650,6 @@ drop_feim_cols = [col for col in cv_feim.columns if col.count('importance') and 
 cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
 cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
 
-#========================================================================
-# Submission
-try:
-    if int(sys.argv[2])==0:
-        test_pred = seed_pred / len(seed_list)
-        submit[target] = test_pred
-        submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
-        submit.to_csv(submit_path, index=False)
-except ValueError:
-    pass
-except TypeError:
-    pass
-#========================================================================
 
 #========================================================================
 # Corr
