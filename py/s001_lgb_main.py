@@ -70,7 +70,7 @@ num_leaves = 57
 #  num_leaves = 59
 #  num_leaves = 61
 #  num_leaves = 68
-#  num_leaves = 70
+num_leaves = 70
 #  num_leaves = 71
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
@@ -126,14 +126,14 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 win_path = f'../features/4_winner/*.gz'
 #  win_path = f'../features/1_first_valid/*.gz'
-#  model_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
+model_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
 #  win_path = f'../model/LB3679_48leaves_colsam03/*.gz'
 #  win_path = f'../model/LB3684_48leaves_colsam03/*.gz'
-tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
+#  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path) + glob.glob(f'../features/5_tmp/*.gz')
-#  win_path_list = glob.glob(model_path)
-win_path_list = glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(model_path)
+#  win_path_list = glob.glob(win_path) + tmp_path_list
 
 base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month', no_flg]]
 base[no_flg].fillna(0, inplace=True)
@@ -142,17 +142,19 @@ base[no_flg].fillna(0, inplace=True)
 #                                            9 if 9<=x and x<=12
 #                                            else x
 #                                           )
+nn_stack = utils.read_pkl_gzip('../ensemble/0210_080_elo_NN_stack_E1set_6fold_lr0.001_30epochs_CV3-6745325015227253.gz')[[key, 'prediction']]
+base = base.merge(nn_stack, how='inner', on=key)
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 
 feature_list = utils.parallel_load_data(path_list=win_path_list)
 
-
 df_feat = pd.concat(feature_list, axis=1)
 
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
+
 
 #  try:
 #      train = train[train[no_flg]!=1]
