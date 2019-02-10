@@ -31,7 +31,7 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 #========================================================================
 # Model Args
 gpu_count = 1
-gpu_count = 8
+#  gpu_count = 8
 batch_size = 128 * gpu_count
 epoch = 5
 learning_rate = 0
@@ -50,9 +50,8 @@ from keras.layers import Input, Embedding, Dense,Flatten, Activation, dot, add
 from keras.models import Model
 from keras.regularizers import l2 as l2_reg
 from keras import initializers
-print(123)
-sys.exit()
-from keras.utils import multi_gpu_model
+if gpu_count>1:
+    from keras.utils import multi_gpu_model
 import itertools
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
