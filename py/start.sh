@@ -1,8 +1,14 @@
 #!/bin/bash
 
 # python s005_lgb_outlier_classifier.py 0.01 10 
-python s001_lgb_main.py 0.01 0 10 ods no_out
-python s001_lgb_main.py 0.01 0 10 ods
+python s001_lgb_main.py 0.01 0 10 ods no_out 0
+python s001_lgb_main.py 0.01 0 10 ods all 0
+python s001_lgb_main.py 0.01 0 10 ods no_out 1
+python s001_lgb_main.py 0.01 0 10 ods all 1
+python s001_lgb_main.py 0.01 0 10 ods no_out 2
+python s001_lgb_main.py 0.01 0 10 ods all 2
+python s001_lgb_main.py 0.01 0 10 ods no_out 3
+python s001_lgb_main.py 0.01 0 10 ods all 3
 # python s019_arange_dist_train.py 8 4 5 term
 # python s019_arange_dist_train.py 8 5 5 term
 # python s019_arange_dist_train.py 8 6 5 term
@@ -35,5 +41,5 @@ python s001_lgb_main.py 0.01 0 10 ods
 
 # python s019_arange_dist_train.py 45 2016-08 5 pmo
 
-# wait
-# sudo shutdown -P
+wait
+sudo shutdown -P

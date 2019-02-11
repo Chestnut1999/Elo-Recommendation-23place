@@ -139,11 +139,13 @@ train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
 
 
 metric = 'auc'
+metric = 'binary_logloss'
 params['objective'] = 'binary'
 params['metric'] = metric
 fold=6
-fold_type='stratified'
-fold_type='self'
+#  fold_type='stratified'
+fold_type='kfold'
+#  fold_type='self'
 group_col_name=''
 dummie=1
 oof_flg=True
@@ -159,27 +161,6 @@ train[col_term] = train[col_term].map(lambda x:
                                           9 if 9<=x and x<=12
                                           else x
                                          )
-
-outlier_thres = -3
-term4  = train[train[col_term] == 4]
-term5  = train[train[col_term] == 5]
-term6  = train[train[col_term] == 6]
-term9  = train[train[col_term] == 9]
-term15  = train[train[col_term] == 15]
-term18  = train[train[col_term] == 18]
-term24  = train[train[col_term] == 24]
-
-df_list = [
-term4    
-,term5 
-,term6    
-,term9    
-,term15   
-,term18   
-,term24   
-]
-
-
 #========================================================================
 # seed_avg
 seed_pred = np.zeros(len(test))
@@ -192,42 +173,6 @@ for i, seed in enumerate(seed_list):
     if key not in train.columns:
         train.reset_index(inplace=True)
         test.reset_index(inplace=True)
-
-    #========================================================================
-    # Validation Set
-    trn_idx_list = []
-    val_idx_list = []
-    train_dict = {}
-    valid_dict = {}
-    for df in df_list:
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold = folds.split(df, df[target].values)
-
-        for fold_num, (p_trn_idx, p_val_idx) in enumerate(kfold):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            trn_ids = get_ids(df, p_trn_idx)
-            val_ids = get_ids(df, p_val_idx)
-
-            # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
-
-    #         trn_idx_list.append(trn_ids)
-    #         val_idx_list.append(val_ids)
-            if fold_num not in train_dict:
-                train_dict[fold_num] = trn_ids
-                valid_dict[fold_num] = val_ids
-            else:
-                train_dict[fold_num] += trn_ids
-                valid_dict[fold_num] += val_ids
-        print(len(np.unique(train_dict[fold_num])), len(np.unique(valid_dict[fold_num])))
-    kfold = list(zip(train_dict.values(), valid_dict.values()))
-    #========================================================================
 
 #========================================================================
 # Train & Prediction Start
@@ -244,7 +189,6 @@ for i, seed in enumerate(seed_list):
         ,num_boost_round=num_boost_round
         ,early_stopping_rounds=early_stopping_rounds
         ,oof_flg=oof_flg
-        ,self_kfold=kfold
     )
 
     seed_pred += LGBM.prediction

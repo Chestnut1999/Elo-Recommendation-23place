@@ -1,12 +1,12 @@
 outlier_thres = -3
 num_threads = 32
-#  num_threads = 36
+num_threads = 36
 import sys
 import pandas as pd
 try:
     out_part = sys.argv[5]
 except IndexError:
-    out_part = ['', 'no_out', 'all'][0]
+    out_part = ['', 'no_out', 'all'][1]
 
 #========================================================================
 # Args
@@ -70,7 +70,7 @@ num_leaves = 57
 #  num_leaves = 59
 #  num_leaves = 61
 #  num_leaves = 68
-num_leaves = 70
+#  num_leaves = 70
 #  num_leaves = 71
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
@@ -126,9 +126,12 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 win_path = f'../features/4_winner/*.gz'
 #  win_path = f'../features/1_first_valid/*.gz'
-model_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
-#  win_path = f'../model/LB3679_48leaves_colsam03/*.gz'
-#  win_path = f'../model/LB3684_48leaves_colsam03/*.gz'
+model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz']
+try:
+    model_no = int(sys.argv[6])
+except:
+    model_no = 0
+model_path = model_path_list[model_no]
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path) + glob.glob(f'../features/5_tmp/*.gz')
@@ -142,8 +145,8 @@ base[no_flg].fillna(0, inplace=True)
 #                                            9 if 9<=x and x<=12
 #                                            else x
 #                                           )
-nn_stack = utils.read_pkl_gzip('../ensemble/0210_080_elo_NN_stack_E1set_6fold_lr0.001_30epochs_CV3-6745325015227253.gz')[[key, 'prediction']]
-base = base.merge(nn_stack, how='inner', on=key)
+#  nn_stack = utils.read_pkl_gzip('../ensemble/0210_080_elo_NN_stack_E1set_6fold_lr0.001_30epochs_CV3-6745325015227253.gz')[[key, 'prediction']]
+#  base = base.merge(nn_stack, how='inner', on=key)
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
@@ -166,12 +169,11 @@ test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=
 y = train[target].values
 
 
+self_predict = []
 if out_part=='no_out':
-    self_predict = train.copy()
-    self_predict.reset_index(inplace=True, drop=True)
+    #  self_predict = train.copy()
+    #  self_predict.reset_index(inplace=True, drop=True)
     train = train[train[target]>-30]
-else:
-    self_predict = []
 
 #========================================================================
 
@@ -410,26 +412,31 @@ for i, seed in enumerate(seed_list):
         # https://www.kaggle.com/c/elo-merchant-category-recommendation/discussion/78903
         # KFold: n_splits=6(or 7)!, shuffle=False!
         #========================================================================
-        train['rounded_target'] = train['target'].round(0)
-        train = train.sort_values('rounded_target').reset_index(drop=True)
-        vc = train['rounded_target'].value_counts()
-        vc = dict(sorted(vc.items()))
-        df = pd.DataFrame()
-        train['indexcol'],idx = 0,1
-        for k,v in vc.items():
-            step = train.shape[0]/v
-            indent = train.shape[0]/(v+1)
-            df2 = train[train['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
-            for j in range(0, v):
-                df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
-            df = pd.concat([df2,df])
-            idx+=1
-        train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
-        del train['indexcol'], train['rounded_target']
-        fold_type = 'self'
-        fold = 6
-        folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
-        kfold = folds.split(train, train[target].values)
+        #  train['rounded_target'] = train['target'].round(0)
+        #  train = train.sort_values('rounded_target').reset_index(drop=True)
+        #  vc = train['rounded_target'].value_counts()
+        #  vc = dict(sorted(vc.items()))
+        #  df = pd.DataFrame()
+        #  train['indexcol'],idx = 0,1
+        #  for k,v in vc.items():
+        #      step = train.shape[0]/v
+        #      indent = train.shape[0]/(v+1)
+        #      df2 = train[train['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
+        #      for j in range(0, v):
+        #          df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
+        #      df = pd.concat([df2,df])
+        #      idx+=1
+        #  train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
+        #  del train['indexcol'], train['rounded_target']
+        #  fold_type = 'self'
+        #  fold = 6
+        #  folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
+        #  kfold = folds.split(train, train[target].values)
+        if out_part=='no_out':
+            kfold = utils.read_pkl_gzip('../input/ods_NoOut_kfold.gz')
+        else:
+            kfold = utils.read_pkl_gzip('../input/ods_kfold.gz')
+
 
     elif sys.argv[4]=='ods_term':
 
