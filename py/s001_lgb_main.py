@@ -6,7 +6,7 @@ import pandas as pd
 try:
     out_part = sys.argv[5]
 except IndexError:
-    out_part = ['', 'no_out', 'all'][1]
+    out_part = ['', 'no_out', 'clf_out', 'no_out_flg'][3]
 
 #========================================================================
 # Args
@@ -15,10 +15,10 @@ key = 'card_id'
 target = 'target'
 col_term = 'hist_regist_term'
 no_flg = 'no_out_flg'
-ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term, no_flg]
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term, no_flg, 'clf_pred']
 #  ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term]
 
-stack_name='en_route'
+stack_name = out_part
 fname=''
 xray=False
 #  xray=True
@@ -138,7 +138,7 @@ model_path = model_path_list[model_no]
 win_path_list = glob.glob(model_path)
 #  win_path_list = glob.glob(win_path) + tmp_path_list
 
-base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month', no_flg]]
+base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg]]
 base[no_flg].fillna(0, inplace=True)
 #  base[col_term] = base[col_term].map(lambda x:
 #                                            6 if 6<=x and x<=8  else
@@ -166,14 +166,38 @@ test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=
 #      base_teset = base_test[base_test[no_flg]!=1]
 #  except IndexError:
 #      pass
-y = train[target].values
 
 
 self_predict = []
 if out_part=='no_out':
-    #  self_predict = train.copy()
-    #  self_predict.reset_index(inplace=True, drop=True)
+    self_predict = train.copy()
+    self_predict.reset_index(inplace=True, drop=True)
     train = train[train[target]>-30]
+
+elif out_part=='outlier':
+    base_clf = utils.read_pkl_gzip('../input/base_clf.gz')[[key, 'clf_pred']]
+    train = train.merge(base_clf, on=key, how='inner')
+    train = train[train['clf_pred']>0.01]
+    train.drop('clf_pred', axis=1, inplace=True)
+    test = test.merge(base_clf, on=key, how='inner')
+    test = test[test['clf_pred']<0.01]
+    test.drop('clf_pred', axis=1, inplace=True)
+
+elif out_part=='clf_out':
+    base_clf = utils.read_pkl_gzip('../input/base_clf.gz')[[key, 'clf_pred']]
+    train = train.merge(base_clf, on=key, how='inner')
+    train = train[train['clf_pred']<0.01]
+    train.drop('clf_pred', axis=1, inplace=True)
+    test = test.merge(base_clf, on=key, how='inner')
+    test = test[test['clf_pred']<0.01]
+    test.drop('clf_pred', axis=1, inplace=True)
+elif out_part=='no_out_flg':
+    train = train[train['no_out_flg']==1]
+    test = test[test['no_out_flg']==1]
+    train.drop('no_out_flg', axis=1, inplace=True)
+    test.drop('no_out_flg', axis=1, inplace=True)
+
+y = train[target].values
 
 #========================================================================
 
@@ -203,7 +227,7 @@ train, test, drop_list = LGBM.data_check(train=train, test=test, target=target, 
 if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
-    if out_part=='no_out':
+    if lne(self_predict)>0:
         self_predict.drop(drop_list, axis=1, inplace=True)
 
 from sklearn.model_selection import StratifiedKFold, KFold
@@ -406,34 +430,12 @@ for i, seed in enumerate(seed_list):
         kfold = list(zip(train_dict.values(), valid_dict.values()))
 
     elif sys.argv[4]=='ods':
-
-        #========================================================================
-        # ods.ai 3rd kernel
-        # https://www.kaggle.com/c/elo-merchant-category-recommendation/discussion/78903
-        # KFold: n_splits=6(or 7)!, shuffle=False!
-        #========================================================================
-        #  train['rounded_target'] = train['target'].round(0)
-        #  train = train.sort_values('rounded_target').reset_index(drop=True)
-        #  vc = train['rounded_target'].value_counts()
-        #  vc = dict(sorted(vc.items()))
-        #  df = pd.DataFrame()
-        #  train['indexcol'],idx = 0,1
-        #  for k,v in vc.items():
-        #      step = train.shape[0]/v
-        #      indent = train.shape[0]/(v+1)
-        #      df2 = train[train['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
-        #      for j in range(0, v):
-        #          df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
-        #      df = pd.concat([df2,df])
-        #      idx+=1
-        #  train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
-        #  del train['indexcol'], train['rounded_target']
-        #  fold_type = 'self'
-        #  fold = 6
-        #  folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
-        #  kfold = folds.split(train, train[target].values)
         if out_part=='no_out':
             kfold = utils.read_pkl_gzip('../input/ods_NoOut_kfold.gz')
+        elif out_part=='clf_out':
+            kfold = utils.read_pkl_gzip('../input/ods_clf001_thres_kfold.gz')
+        elif out_part=='no_out_flg':
+            kfold = utils.read_pkl_gzip('../input/ods_no_out_flg_kfold.gz')
         else:
             kfold = utils.read_pkl_gzip('../input/ods_kfold.gz')
 
@@ -555,16 +557,6 @@ for i, seed in enumerate(seed_list):
         df_pred = df_pred.merge(LGBM.result_stack[[key, 'prediction']].rename(columns={'prediction':f'prediction_{i}'}), how='inner', on=key)
 
 
-#========================================================================
-# STACKING
-if len(stack_name)>0:
-    logger.info(f'result_stack shape: {df_pred.shape}')
-    if len(seed_list)>1:
-        pred_cols = [col for col in df_pred.columns if col.count('predict')]
-        df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
-        df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
-#========================================================================
-
 
 #========================================================================
 # Result
@@ -576,6 +568,25 @@ logger.info(f'''
 #========================================================================
 # {len(seed_list)}SEED CV SCORE AVG: {cv_score}
 #========================================================================''')
+
+#========================================================================
+# STACKING
+if len(stack_name)>0:
+    logger.info(f'result_stack shape: {df_pred.shape}')
+    if len(seed_list)>1:
+        pred_cols = [col for col in df_pred.columns if col.count('predict')]
+        df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
+        df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
+# Save
+out_score = 0
+try:
+    if int(sys.argv[2])==0:
+        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_out_part{out_part}_row{len(train)}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT0_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
+except ValueError:
+    pass
+except TypeError:
+    pass
+#========================================================================
 
 #========================================================================
 # Part of card_id Score
@@ -683,15 +694,6 @@ if len(train)>150000:
 else:
     out_score = 0
 
-# Save
-try:
-    if int(sys.argv[2])==0:
-        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
-except ValueError:
-    pass
-except TypeError:
-    pass
-
 # 不要なカラムを削除
 drop_feim_cols = [col for col in cv_feim.columns if col.count('importance_') or col.count('rank_')]
 cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
@@ -725,8 +727,10 @@ else:
 
 # 相関
 for i, path in enumerate(ens_list):
-
-    ens_model = utils.read_pkl_gzip(path)[[key, 'pred_mean']].set_index(key)
+    try:
+        ens_model = utils.read_pkl_gzip(path)[[key, 'pred_mean']].set_index(key)
+    except KeyError:
+        ens_model = utils.read_pkl_gzip(path)[[key, 'prediction']].set_index(key)
     base['ens_pred'] = ens_model['pred_mean']
     cv_score = re.search(r'CV([^/.]*)_LB.gz', path).group(1)
     corr = np.corrcoef(base['ens_pred'], base['this_pred'].values).min()
