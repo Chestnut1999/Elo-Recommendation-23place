@@ -1,10 +1,5 @@
-from sklearn.linear_model import Ridge
-from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_squared_error
-from utils import logger_func, get_categorical_features, get_numeric_features, reduce_mem_usage, elo_save_feature, impute_feature
-import utils
-from s027_kfold_ods import ods_kfold
+out_part = ['all', 'no_out'][0]
+model_type = ['ridge', 'rmf', 'ext']
 import gc
 import re
 import pandas as pd
@@ -17,6 +12,8 @@ import glob
 sys.path.append('../py/')
 HOME = os.path.expanduser("~")
 sys.path.append(f'{HOME}/kaggle/data_analysis/library')
+from utils import logger_func, get_categorical_features, get_numeric_features, reduce_mem_usage, elo_save_feature, impute_feature
+import utils
 try:
     if not logger:
         logger = logger_func()
@@ -28,26 +25,29 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 
 #========================================================================
-# Keras 
-# Corporación Favorita Grocery Sales Forecasting
+# Model
 from sklearn.linear_model import Ridge
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
+from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import mean_squared_error
 #========================================================================
 
 
 # ========================================================================
 # Args
-is_regularize = [True, False][0]
-out_part = ['', 'part', 'all'][0]
+if model_type=='ridge':
+    is_regularize = True
+else:
+    is_regularize = False
+
 key = 'card_id'
 target = 'target'
 ignore_list = [key, target, 'merchant_id', 'first_active_month',
                'index', 'personal_term', 'no_out_flg']
-model_type = 'ridge'
 stack_name = model_type
 submit = pd.read_csv('../input/sample_submission.csv')
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
-seed = 328
 # ========================================================================
 
 
@@ -86,6 +86,8 @@ if is_regularize:
 
 # ========================================================================
 # CVの準備
+seed = 328
+num_threads = -1
 fold = 6
 fold_seed = 328
 submit = pd.read_csv('../input/sample_submission.csv').set_index(key)
@@ -96,13 +98,18 @@ val_pred_list = []
 test_pred = np.zeros(len(test))
 
 ignore_list = [key, target, 'merchant_id', 'first_active_month',
-               'index', 'personal_term', 'no_out_flg']
+               'index', 'personal_term', 'no_out_flg' 'clf_pred']
 # ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term']
 use_cols = [col for col in train.columns if col not in ignore_list]
 scaler = StandardScaler()
 scaler.fit(pd.concat([train[use_cols], test[use_cols]]))
 x_test = scaler.transform(test[use_cols])
 
+if out_part=='no_out':
+    train = train[train[target]>-30]
+    kfold = utils.read_pkl_gzip('../input/kfold_ods_no_out_fold6_seed328.gz')
+else:
+    kfold = utils.read_pkl_gzip('../input/kfold_ods_all_fold6_seed328.gz')
 Y = train[target]
 # ========================================================================
 
@@ -110,19 +117,39 @@ print(f"Train: {train.shape} | Test: {test.shape}")
 
 # ========================================================================
 # NN Model Setting
-if model_type=='ridge'
-params['solver'] = 'auto'
-params['fit_intercept'] = True
-params['alpha'] = 0.4
-params['max_iter'] = 1000
-params['normalize'] = False
-params['tol'] = 0.01
 
-kfold = utils.read_pkl_gzip('../input/ods_kfold.gz')
+def select_model(model_type, seed=1208):
+    if model_type=='ridge':
+        params['solver'] = 'auto'
+        params['fit_intercept'] = True
+        params['alpha'] = 0.4
+        params['max_iter'] = 1000
+        params['normalize'] = False
+        params['tol'] = 0.01
+        model = Ridge(**params)
+    elif model_type=='rmf':
+        params['maxdepth'] = 10
+        params['n_estimators'] = 3000
+        params['criterion'] = 'mse'
+        params['max_features'] = 0.3
+        params['min_samples_leaf'] = 30
+        params['min_samples_split'] = 30
+        params['n_jobs'] = num_threads
+        params['random_state'] = seed
+        model = RandomForestRegressor(**params)
+    elif model_type=='ext':
+        params['maxdepth'] = 10
+        params['n_estimators'] = 3000
+        params['max_features'] = 'auto'
+        params['min_samples_leaf'] = 30
+        params['min_samples_split'] = 30
+        params['n_jobs'] = num_threads
+        params['random_state'] = seed
+        model = ExtraTreesRegressor(**params)
+
+    return model
 
 result_list = []
-if model_type=='ridge':
-    model = Ridge(**params)
 
 # ========================================================================
 # Train & Prediction Start
