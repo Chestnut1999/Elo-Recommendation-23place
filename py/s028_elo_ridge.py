@@ -23,6 +23,17 @@ try:
 except NameError:
     logger = logger_func()
 
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
+
+#========================================================================
+# Keras 
+# Corporación Favorita Grocery Sales Forecasting
+from sklearn.linear_model import Ridge
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
+#========================================================================
+
 
 # ========================================================================
 # Args
@@ -193,4 +204,4 @@ display(submit.head())
 
 # Save Stack
 # utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_alpha{alpha}_{len(use_cols)}feats_tol{tol}_iter{max_iter}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB" , obj=df_pred)
-# ========================================================================
+#========================================================================
