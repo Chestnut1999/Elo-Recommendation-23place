@@ -1,12 +1,20 @@
+fold_seed = 328
 outlier_thres = -3
 num_threads = 32
-num_threads = 36
+#  num_threads = 36
 import sys
 import pandas as pd
+
+valid_type = sys.argv[4]
 try:
     out_part = sys.argv[5]
 except IndexError:
     out_part = ['', 'no_out', 'clf_out', 'no_out_flg'][3]
+
+try:
+    objective = sys.argv[8]
+except IndexError:
+    objective = 'regression'
 
 #========================================================================
 # Args
@@ -60,13 +68,17 @@ except NameError:
 
 params = params_elo()[1]
 params['learning_rate'] = learning_rate
+params['objective'] = objective
 
 # Best outlier fit LB3.690
 #  num_leaves = 4
 #  num_leaves = 16
 num_leaves = 31
 num_leaves = 48
-num_leaves = 57
+try:
+    num_leaves = int(sys.argv[7])
+except IndexError:
+    num_leaves = 57
 #  num_leaves = 59
 #  num_leaves = 61
 #  num_leaves = 68
@@ -129,7 +141,7 @@ win_path = f'../features/4_winner/*.gz'
 model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz']
 try:
     model_no = int(sys.argv[6])
-except:
+except IndexError:
     model_no = 0
 model_path = model_path_list[model_no]
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
@@ -138,13 +150,17 @@ model_path = model_path_list[model_no]
 win_path_list = glob.glob(model_path)
 #  win_path_list = glob.glob(win_path) + tmp_path_list
 
-base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg]]
-base[no_flg].fillna(0, inplace=True)
-#  base[col_term] = base[col_term].map(lambda x:
-#                                            6 if 6<=x and x<=8  else
-#                                            9 if 9<=x and x<=12
-#                                            else x
-#                                           )
+base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
+#  base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month']]
+base[col_term] = base[col_term].map(lambda x:
+                                          24 if 19<=x else
+                                          18 if 16<=x and x<=18 else
+                                          15 if 13<=x and x<=15 else
+                                          12 if 9<=x and x<=12  else
+                                          8 if 6<=x and x<=8    else
+                                          5 if x==5 else
+                                          4
+                                         )
 #  nn_stack = utils.read_pkl_gzip('../ensemble/0210_080_elo_NN_stack_E1set_6fold_lr0.001_30epochs_CV3-6745325015227253.gz')[[key, 'prediction']]
 #  base = base.merge(nn_stack, how='inner', on=key)
 
@@ -158,20 +174,8 @@ df_feat = pd.concat(feature_list, axis=1)
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
 
-
-#  try:
-#      train = train[train[no_flg]!=1]
-#      test = test[test[no_flg]!=1]
-#      base_train = base_train[base_train[no_flg]!=1]
-#      base_teset = base_test[base_test[no_flg]!=1]
-#  except IndexError:
-#      pass
-
-
 self_predict = []
 if out_part=='no_out':
-    self_predict = train.copy()
-    self_predict.reset_index(inplace=True, drop=True)
     train = train[train[target]>-30]
 
 elif out_part=='outlier':
@@ -184,13 +188,13 @@ elif out_part=='outlier':
     test.drop('clf_pred', axis=1, inplace=True)
 
 elif out_part=='clf_out':
-    base_clf = utils.read_pkl_gzip('../input/base_clf.gz')[[key, 'clf_pred']]
-    train = train.merge(base_clf, on=key, how='inner')
+    #  base_clf = utils.read_pkl_gzip('../input/base_clf.gz')[[key, 'clf_pred']]
+    #  train = train.merge(base_clf, on=key, how='inner')
     train = train[train['clf_pred']<0.01]
     train.drop('clf_pred', axis=1, inplace=True)
-    test = test.merge(base_clf, on=key, how='inner')
     test = test[test['clf_pred']<0.01]
     test.drop('clf_pred', axis=1, inplace=True)
+
 elif out_part=='no_out_flg':
     train = train[train['no_out_flg']==1]
     test = test[test['no_out_flg']==1]
@@ -260,14 +264,12 @@ for i, seed in enumerate(seed_list):
     # Validation Setting vvv
     # Validation Set はFitさせたいFirst month のグループに絞る
     # 1. マイナスでOutlierの閾値を切って、それらの分布が揃う様にKFoldを作る
-    if sys.argv[4]=='minus':
-        train['outliers'] = train[target].map(lambda x: 1 if x < outlier_thres else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold = folds.split(train,train['outliers'].values)
-        train.drop('outliers', axis=1, inplace=True)
+    kfold_path = f'../input/kfold_{valid_type}_{out_part}_fold{fold}_seed{fold_seed}.gz'
+    if os.path.exists(kfold_path):
+        kfold = utils.read_pkl_gzip(kfold_path)
 
     # 2. プラスマイナスでOutlierの閾値を切って、プラス、マイナス別に分布が揃う様にKFoldを作る
-    elif sys.argv[4]=='pmo':
+    elif valid_type=='pmo':
         plus  = train[train[target] >= 0]
         tmp_minus = train[train[target] <  0]
         minus = tmp_minus[tmp_minus[target] >  -30]
@@ -277,7 +279,7 @@ for i, seed in enumerate(seed_list):
         minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
         out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
 
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=fold_seed)
         kfold_plus = folds.split(plus, plus['outliers'].values)
         kfold_minus = folds.split(minus, minus['outliers'].values)
         kfold_out = folds.split(out, out['outliers'].values)
@@ -294,22 +296,22 @@ for i, seed in enumerate(seed_list):
             val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
 
             # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
+            #  trn_ids = list(train[train[key].isin(trn_ids)].index)
+            #  val_ids = list(train[train[key].isin(val_ids)].index)
 
             trn_idx_list.append(trn_ids)
             val_idx_list.append(val_ids)
-        kfold = zip(trn_idx_list, val_idx_list)
+        kfold = [trn_idx_list, val_idx_list]
 
-    elif sys.argv[4]=='pm':
+    elif valid_type=='pm':
         plus  = train[train[target] >= 0]
-        tmp_minus = train[train[target] <  0]
-        minus = tmp_minus[tmp_minus[target] >  -30]
+        minus = train[train[target] <  0]
+        #  minus = tmp_minus[tmp_minus[target] >  -30]
 
         plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
         minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
 
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=fold_seed)
         kfold_plus = folds.split(plus, plus['outliers'].values)
         kfold_minus = folds.split(minus, minus['outliers'].values)
 
@@ -325,55 +327,32 @@ for i, seed in enumerate(seed_list):
             val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
 
             # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
+            #  trn_ids = list(train[train[key].isin(trn_ids)].index)
+            #  val_ids = list(train[train[key].isin(val_ids)].index)
 
             trn_idx_list.append(trn_ids)
             val_idx_list.append(val_ids)
-        kfold = zip(trn_idx_list, val_idx_list)
+        # card_id ver
+        kfold = [trn_idx_list, val_idx_list]
 
+    elif valid_type=='out':
 
-    elif sys.argv[4]=='fmpm':
-
-        train.reset_index(drop=True, inplace=True)
-        fm_train = train[train[key].isin(train_latest_id_list)].reset_index(drop=True)
-        plus  = fm_train[fm_train[target] >= 0]
-        minus = fm_train[fm_train[target] <  0]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx) in zip(kfold_plus, kfold_minus):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
-            trn_ids = list(set(list(train[key].values)) - set(val_ids))
-
-            # idをindexの番号にする
-            trn_ids = list(train[train[key].isin(trn_ids)].index)
-            val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-
-        kfold = zip(trn_idx_list, val_idx_list)
-
-    elif sys.argv[4]=='out':
         train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=fold_seed)
         kfold = list(folds.split(train,train['outliers'].values))
         train.drop('outliers', axis=1, inplace=True)
 
-    elif sys.argv[4]=='term':
+        # card_id listにする
+        trn_list = []
+        val_list = []
+        for trn, val in kfold:
+            trn_ids = train.iloc[trn][key].values
+            val_ids = train.iloc[val][key].values
+            trn_list.append(trn_ids)
+            val_list.append(val_ids)
+        kfold = [trn_list, val_list]
+
+    elif valid_type=='term':
         outlier_thres = -3
 
         term_list = list(train[col_term].value_counts().index)
@@ -394,8 +373,7 @@ for i, seed in enumerate(seed_list):
             minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
             out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
 
-
-            folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=seed)
+            folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=fold_seed)
             kfold_plus = folds.split(plus, plus['outliers'].values)
             kfold_minus = folds.split(minus, minus['outliers'].values)
             if len(out):
@@ -417,8 +395,8 @@ for i, seed in enumerate(seed_list):
                     val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
 
                 # idをindexの番号にする
-                trn_ids = list(df[df[key].isin(trn_ids)].index)
-                val_ids = list(df[df[key].isin(val_ids)].index)
+                #  trn_ids = list(df[df[key].isin(trn_ids)].index)
+                #  val_ids = list(df[df[key].isin(val_ids)].index)
 
                 if fold_num not in train_dict:
                     train_dict[fold_num] = trn_ids
@@ -427,20 +405,41 @@ for i, seed in enumerate(seed_list):
                     train_dict[fold_num] += trn_ids
                     valid_dict[fold_num] += val_ids
             print(len(train_dict[fold_num]), len(valid_dict[fold_num]))
-        kfold = list(zip(train_dict.values(), valid_dict.values()))
+        #  kfold = list(zip(train_dict.values(), valid_dict.values()))
+        kfold = [train_dict.values(), valid_dict.values()]
 
-    elif sys.argv[4]=='ods':
-        if out_part=='no_out':
-            kfold = utils.read_pkl_gzip('../input/ods_NoOut_kfold.gz')
-        elif out_part=='clf_out':
-            kfold = utils.read_pkl_gzip('../input/ods_clf001_thres_kfold.gz')
-        elif out_part=='no_out_flg':
-            kfold = utils.read_pkl_gzip('../input/ods_no_out_flg_kfold.gz')
-        else:
-            kfold = utils.read_pkl_gzip('../input/ods_kfold.gz')
+    elif valid_type=='ods':
+        train['rounded_target'] = train['target'].round(0)
+        train = train.sort_values('rounded_target').reset_index(drop=True)
+        vc = train['rounded_target'].value_counts()
+        vc = dict(sorted(vc.items()))
+        df = pd.DataFrame()
+        train['indexcol'],i = 0,1
+        for k,v in vc.items():
+            step = train.shape[0]/v
+            indent = train.shape[0]/(v+1)
+            df2 = train[train['rounded_target'] == k].sample(v, random_state=120).reset_index(drop=True)
+            for j in range(0, v):
+                df2.at[j, 'indexcol'] = indent + j*step + 0.000001*i
+            df = pd.concat([df2,df])
+            i+=1
+        train = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
+        del train['indexcol'], train['rounded_target']
 
+        folds = KFold(n_splits=6, shuffle=False, random_state=fold_seed)
+        kfold = list(folds.split(train, train[target].values))
 
-    elif sys.argv[4]=='ods_term':
+        # card_id listにする
+        trn_list = []
+        val_list = []
+        for trn, val in kfold:
+            trn_ids = train.iloc[trn][key].values
+            val_ids = train.iloc[val][key].values
+            trn_list.append(trn_ids)
+            val_list.append(val_ids)
+        kfold = [trn_list, val_list]
+
+    elif valid_type=='ods_term':
 
         outlier_thres = -3
         term4  = train[train[col_term] == 4]
@@ -479,14 +478,14 @@ for i, seed in enumerate(seed_list):
             for k,v in vc.items():
                 step = df_term.shape[0]/v
                 indent = df_term.shape[0]/(v+1)
-                df2 = df_term[df_term['rounded_target'] == k].sample(v, random_state=seed).reset_index(drop=True)
+                df2 = df_term[df_term['rounded_target'] == k].sample(v, random_state=fold_seed).reset_index(drop=True)
                 for j in range(0, v):
                     df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
                 df = pd.concat([df2,df])
                 idx+=1
             df_term = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
             del df_term['indexcol'], df_term['rounded_target']
-            folds = KFold(n_splits=fold, shuffle=False, random_state=seed)
+            folds = KFold(n_splits=fold, shuffle=False, random_state=fold_seed)
             kfold = folds.split(df_term, df_term[target].values)
 
             for fold_num, (p_trn_idx, p_val_idx) in enumerate(kfold):
@@ -499,8 +498,8 @@ for i, seed in enumerate(seed_list):
                 val_ids = get_ids(df_term, p_val_idx)
 
                 # idをindexの番号にする
-                trn_ids = list(train[train[key].isin(trn_ids)].index)
-                val_ids = list(train[train[key].isin(val_ids)].index)
+                #  trn_ids = list(train[train[key].isin(trn_ids)].index)
+                #  val_ids = list(train[train[key].isin(val_ids)].index)
 
                 if fold_num not in train_dict:
                     train_dict[fold_num] = trn_ids
@@ -517,6 +516,8 @@ for i, seed in enumerate(seed_list):
         kfold = False
         fold_type = 'kfold'
     #========================================================================
+    if not(os.path.exists(kfold_path)):
+        utils.to_pkl_gzip(obj=kfold, path=kfold_path)
 
     train.sort_index(axis=1, inplace=True)
     test.sort_index(axis=1, inplace=True)
@@ -579,13 +580,8 @@ if len(stack_name)>0:
         df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
 # Save
 out_score = 0
-try:
-    if int(sys.argv[2])==0:
-        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_out_part{out_part}_row{len(train)}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT0_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred)
-except ValueError:
-    pass
-except TypeError:
-    pass
+pred_col = [col for col in df_pred.columns if col.count('pred')][0]
+utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_out_part-{out_part}_valid-{valid_type}_foldseed{fold_seed}_ESET{model_no}_row{len(train)}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT0_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred[[key, pred_col]])
 #========================================================================
 
 #========================================================================
@@ -703,16 +699,10 @@ cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rat
 
 #========================================================================
 # Submission
-try:
-    if int(sys.argv[2])==0:
-        test_pred = seed_pred / len(seed_list)
-        submit[target] = test_pred
-        submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
-        submit.to_csv(submit_path, index=False)
-except ValueError:
-    pass
-except TypeError:
-    pass
+test_pred = seed_pred / len(seed_list)
+submit[target] = test_pred
+submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_obj{objective}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
+submit.to_csv(submit_path, index=False)
 #========================================================================
 
 #========================================================================
@@ -727,11 +717,13 @@ else:
 
 # 相関
 for i, path in enumerate(ens_list):
-    try:
-        ens_model = utils.read_pkl_gzip(path)[[key, 'pred_mean']].set_index(key)
-    except KeyError:
-        ens_model = utils.read_pkl_gzip(path)[[key, 'prediction']].set_index(key)
-    base['ens_pred'] = ens_model['pred_mean']
+    ens_model = utils.read_pkl_gzip(path)
+    if 'pred_mean' in ens_model.columns:
+        pred_col = 'pred_mean'
+    else:
+        pred_col = 'prediction'
+    ens_model = ens_model[[key, pred_col]].set_index(key)
+    base['ens_pred'] = ens_model[pred_col]
     cv_score = re.search(r'CV([^/.]*)_LB.gz', path).group(1)
     corr = np.corrcoef(base['ens_pred'], base['this_pred'].values).min()
     logger.info(f"WITH CV{cv_score[:6]} CORR: {corr}")
