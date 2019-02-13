@@ -8,7 +8,6 @@ import time
 import datetime
 import glob
 sys.path.append('../py/')
-from s027_kfold_ods import ods_kfold
 HOME = os.path.expanduser("~")
 sys.path.append(f'{HOME}/kaggle/data_analysis/library')
 import utils
@@ -27,6 +26,7 @@ from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 # Keras 
 # Corporación Favorita Grocery Sales Forecasting
 from sklearn.linear_model import Ridge
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 #========================================================================
 
 
