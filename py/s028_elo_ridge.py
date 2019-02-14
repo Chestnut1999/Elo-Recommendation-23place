@@ -1,11 +1,17 @@
+import sys
+is_save = 0
 out_part = ['all', 'no_out'][0]
 model_type = ['ridge', 'rmf', 'ext']
+try:
+    model_no = int(sys.argv[6])
+except IndexError:
+    model_no = 0
+    
 import gc
 import re
 import pandas as pd
 import numpy as np
 import os
-import sys
 import time
 import datetime
 import glob
@@ -36,11 +42,6 @@ from sklearn.metrics import mean_squared_error
 
 # ========================================================================
 # Args
-if model_type=='ridge':
-    is_regularize = True
-else:
-    is_regularize = False
-
 key = 'card_id'
 target = 'target'
 ignore_list = [key, target, 'merchant_id', 'first_active_month',
@@ -55,8 +56,9 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # Data Load
 print("Preparing dataset...")
 
-win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
-win_path_list = glob.glob(win_path)
+model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz']
+model_path = model_path_list[model_no]
+win_path_list = glob.glob(model_path)
 
 base = utils.read_df_pkl(
     '../input/base_term*0*')[[key, target, 'first_active_month']]
@@ -75,7 +77,7 @@ test.reset_index(inplace=True, drop=True)
 
 # ========================================================================
 # 正規化の前処理(Null埋め, inf, -infの処理)
-if is_regularize:
+if model_type=='ridge':
     for col in train.columns:
         if col in ignore_list:
             continue
@@ -196,8 +198,8 @@ test_pred /= fold_no+1
 test['prediction'] = test_pred
 stack_test = test[[key, 'prediction']]
 result_list.append(stack_test)
-df_pred = pd.concat(result_list, axis=0,
-                    ignore_index=True).drop(target, axis=1)
+df_pred = pd.concat(result_list, axis=0, ignore_index=True).drop(target, axis=1)
+
 if key not in base:
     base.reset_index(inplace=True)
 df_pred = base[[key, target]].merge(df_pred, how='inner', on=key)
@@ -225,10 +227,12 @@ print(f'''
 df_pred.set_index(key, inplace=True)
 submit[target] = df_pred['prediction']
 submit_path = f'../submit/{start_time[4:12]}_submit_RIDGE_STACKING_{model_type}_{len(use_cols)}models_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
-submit.to_csv(submit_path, index=True)
 display(submit.head())
 # ========================================================================
 
-# Save Stack
-# utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_alpha{alpha}_{len(use_cols)}feats_tol{tol}_iter{max_iter}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB" , obj=df_pred)
+# ========================================================================
+# Save Result
+if is_save:
+    submit.to_csv(submit_path, index=True)
+    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_alpha{alpha}_{len(use_cols)}feats_tol{tol}_iter{max_iter}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB" , obj=df_pred)
 #========================================================================

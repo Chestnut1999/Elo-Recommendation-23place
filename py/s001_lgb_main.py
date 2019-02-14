@@ -75,10 +75,7 @@ params['objective'] = objective
 #  num_leaves = 16
 num_leaves = 31
 num_leaves = 48
-try:
-    num_leaves = int(sys.argv[7])
-except IndexError:
-    num_leaves = 57
+num_leaves = 57
 #  num_leaves = 59
 #  num_leaves = 61
 #  num_leaves = 68
@@ -131,6 +128,12 @@ else:
     params['colsample_bytree'] = 0.3
     params['min_child_samples'] = 30
 
+try:
+    params['colsample_bytree'] = float(sys.argv[7])
+except IndexError:
+    pass
+
+colsample_bytree = params['colsample_bytree']
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 #========================================================================
@@ -161,8 +164,12 @@ base[col_term] = base[col_term].map(lambda x:
                                           5 if x==5 else
                                           4
                                          )
-#  nn_stack = utils.read_pkl_gzip('../ensemble/0210_080_elo_NN_stack_E1set_6fold_lr0.001_30epochs_CV3-6745325015227253.gz')[[key, 'prediction']]
-#  base = base.merge(nn_stack, how='inner', on=key)
+#  nn_stack_plus = utils.read_pkl_gzip('../ensemble/NN_ensemble/0213_142_elo_NN_stack_E1_row99239_outpart-all_235feat_const1_lr0.001_batch128_epoch30_CV1.2724309982670599.gz')[[key, 'prediction']].set_index(key)
+#  nn_stack_minus = utils.read_pkl_gzip('../ensemble/NN_ensemble/0213_145_elo_NN_stack_E1_row104308_outpart-all_235feat_const1_lr0.001_batch128_epoch30_CV4.864183650939903.gz')[[key, 'prediction']].set_index(key)
+#  base.set_index(key, inplace=True)
+#  base['nn_plus'] = nn_stack_plus['prediction']
+#  base['nn_minus'] = nn_stack_minus['prediction']
+#  base.reset_index(inplace=True)
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
@@ -581,7 +588,7 @@ if len(stack_name)>0:
 # Save
 out_score = 0
 pred_col = [col for col in df_pred.columns if col.count('pred')][0]
-utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_out_part-{out_part}_valid-{valid_type}_foldseed{fold_seed}_ESET{model_no}_row{len(train)}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT0_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred[[key, pred_col]])
+utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_out_part-{out_part}_valid-{valid_type}_foldseed{fold_seed}_ESET{model_no}_row{len(train)}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_colsample{colsample_bytree}_iter{iter_avg}_OUT0_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred[[key, pred_col]])
 #========================================================================
 
 #========================================================================
