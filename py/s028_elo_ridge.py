@@ -1,12 +1,10 @@
 import sys
-is_save = 0
-out_part = ['all', 'no_out'][0]
-model_type = ['ridge', 'rmf', 'ext']
-try:
-    model_no = int(sys.argv[6])
-except IndexError:
-    model_no = 0
-    
+is_save = 1
+set_no = int(sys.argv[1])
+out_part = sys.argv[2]
+model_type = sys.argv[3]
+valid_type = sys.argv[4]
+
 import gc
 import re
 import pandas as pd
@@ -34,11 +32,11 @@ from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 # Model
 from sklearn.linear_model import Ridge
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
+from rgf.sklearn import RGFRegressor, RGFClassifier
 from sklearn.model_selection import StratifiedKFold, KFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error
 #========================================================================
-
 
 # ========================================================================
 # Args
@@ -47,17 +45,15 @@ target = 'target'
 ignore_list = [key, target, 'merchant_id', 'first_active_month',
                'index', 'personal_term', 'no_out_flg']
 stack_name = model_type
-submit = pd.read_csv('../input/sample_submission.csv')
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 # ========================================================================
-
 
 # ========================================================================
 # Data Load
 print("Preparing dataset...")
 
 model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz']
-model_path = model_path_list[model_no]
+model_path = model_path_list[set_no]
 win_path_list = glob.glob(model_path)
 
 base = utils.read_df_pkl(
@@ -77,13 +73,13 @@ test.reset_index(inplace=True, drop=True)
 
 # ========================================================================
 # 正規化の前処理(Null埋め, inf, -infの処理)
-if model_type=='ridge':
-    for col in train.columns:
-        if col in ignore_list:
-            continue
+#  if model_type=='ridge':
+for col in train.columns:
+    if col in ignore_list:
+        continue
 
-        train[col] = impute_feature(train, col)
-        test[col] = impute_feature(test, col)
+    train[col] = impute_feature(train, col)
+    test[col] = impute_feature(test, col)
 # ========================================================================
 
 # ========================================================================
@@ -92,7 +88,6 @@ seed = 328
 num_threads = -1
 fold = 6
 fold_seed = 328
-submit = pd.read_csv('../input/sample_submission.csv').set_index(key)
 model_list = []
 result_list = []
 score_list = []
@@ -109,16 +104,18 @@ x_test = scaler.transform(test[use_cols])
 
 if out_part=='no_out':
     train = train[train[target]>-30]
-    kfold = utils.read_pkl_gzip('../input/kfold_ods_no_out_fold6_seed328.gz')
-else:
-    kfold = utils.read_pkl_gzip('../input/kfold_ods_all_fold6_seed328.gz')
+
+kfold_path = f'../input/kfold_{valid_type}_{out_part}_fold{fold}_seed{fold_seed}.gz'
+if os.path.exists(kfold_path):
+    kfold = utils.read_pkl_gzip(kfold_path)
 Y = train[target]
 # ========================================================================
 
 print(f"Train: {train.shape} | Test: {test.shape}")
 
 # ========================================================================
-# NN Model Setting
+# Model Setting
+params = {}
 
 def select_model(model_type, seed=1208):
     if model_type=='ridge':
@@ -130,7 +127,7 @@ def select_model(model_type, seed=1208):
         params['tol'] = 0.01
         model = Ridge(**params)
     elif model_type=='rmf':
-        params['maxdepth'] = 10
+        params['max_depth'] = 10
         params['n_estimators'] = 3000
         params['criterion'] = 'mse'
         params['max_features'] = 0.3
@@ -140,7 +137,7 @@ def select_model(model_type, seed=1208):
         params['random_state'] = seed
         model = RandomForestRegressor(**params)
     elif model_type=='ext':
-        params['maxdepth'] = 10
+        params['max_depth'] = 10
         params['n_estimators'] = 3000
         params['max_features'] = 'auto'
         params['min_samples_leaf'] = 30
@@ -148,6 +145,18 @@ def select_model(model_type, seed=1208):
         params['n_jobs'] = num_threads
         params['random_state'] = seed
         model = ExtraTreesRegressor(**params)
+    elif model_type=='rgf':
+        #  params['reg_depth'] = 10
+        params['max_leaf'] = 2000
+        params['loss'] = "LS"
+        params['n_tree_search'] = 3000
+        params['min_samples_leaf'] = 30
+        params['learning_rate'] = 0.01
+        params['verbose'] = True
+        params['algorithm'] = "RGF"
+        params['test_interval'] = 100
+        model = RGFRegressor(**params)
+
 
     return model
 
@@ -172,7 +181,10 @@ for fold_no, (trn_idx, val_idx) in enumerate(zip(*kfold)):
     # ========================================================================
 
     # Fitting
+    print(f"Fold{fold_no}: Fitting Start!!")
+    model = select_model(model_type, seed)
     model.fit(X_train, y_train)
+    print(f"Fold{fold_no}: Fitting Complete!!")
 
     # Prediction
     y_pred = model.predict(X_val)
@@ -186,7 +198,7 @@ for fold_no, (trn_idx, val_idx) in enumerate(zip(*kfold)):
     # Scoring
     err = (y_val - y_pred)
     score = np.sqrt(mean_squared_error(y_val, y_pred))
-    print(f'RMSE: {score} | SUM ERROR: {err.sum()}')
+    logger.info(f'RMSE: {score} | SUM ERROR: {err.sum()}')
     score_list.append(score)
     # ========================================================================
 
@@ -216,23 +228,23 @@ out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
 out_score = np.sqrt(mean_squared_error(out_val, out_pred))
 # ========================================================================
 
-print(f'''
+logger.info(f'''
 #========================================================================
 # CV SCORE AVG: {cv_score}
 # OUT SCORE: {out_score}
 #========================================================================''')
 
 # ========================================================================
-# Submission
+# Stacking
 df_pred.set_index(key, inplace=True)
-submit[target] = df_pred['prediction']
-submit_path = f'../submit/{start_time[4:12]}_submit_RIDGE_STACKING_{model_type}_{len(use_cols)}models_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
-display(submit.head())
+if 'pred_mean' in df_pred.columns:
+    pred_col = 'pred_mean'
+else:
+    pred_col = 'prediction'
 # ========================================================================
 
 # ========================================================================
 # Save Result
 if is_save:
-    submit.to_csv(submit_path, index=True)
-    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_stack_{model_type}_alpha{alpha}_{len(use_cols)}feats_tol{tol}_iter{max_iter}_OUT{str(out_score)[:7]}_CV{str(cv_score).replace('.', '-')}_LB" , obj=df_pred)
+    utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{model_type}_out_part-{out_part}_valid-{valid_type}_foldseed{fold_seed}_ESET{set_no}_row{len(train)}_{len(use_cols)}feats_seed{seed}_OUT{out_score}_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred.reset_index()[[key, pred_col]])
 #========================================================================

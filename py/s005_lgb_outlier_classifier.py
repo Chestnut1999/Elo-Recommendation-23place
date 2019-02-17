@@ -1,41 +1,41 @@
-import gc
+fold_seed = 328
+outlier_thres = -3
+num_threads = 32
+#  num_threads = 36
 import sys
 import pandas as pd
-from sklearn.model_selection import StratifiedKFold
+try:
+    model_no = int(sys.argv[1])
+except IndexError:
+    model_no = 0
+valid_type = sys.argv[2]
+
 #========================================================================
 # Args
 #========================================================================
 key = 'card_id'
 target = 'target'
-ignore_list = [key, target, 'merchant_id', 'first_active_month', 'hist_regist_term']
+col_term = 'hist_regist_term'
+no_flg = 'no_out_flg'
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term, no_flg, 'clf_pred']
+stack_name='stack'
 
-win_path = f'../features/4_winner/*.gz'
-stack_name='outlier_classify'
-fname=''
-
-#========================================================================
-# argv[1] : model_type 
-# argv[2] : learning_rate
-# argv[3] : early_stopping_rounds
-#========================================================================
-
-try:
-    learning_rate = float(sys.argv[1])
-except IndexError:
-    learning_rate = 0.01
+model_type='lgb'
+learning_rate = 0.01
 early_stopping_rounds = 200
-num_boost_round = 10000
-num_threads = 36
+num_boost_round = 5000
 
 import numpy as np
 import datetime
 import glob
+import re
+import gc
 import os
+from sklearn.metrics import mean_squared_error
 HOME = os.path.expanduser('~')
 
 sys.path.append(f'{HOME}/kaggle/data_analysis/model')
 from params_lgbm import params_elo
-from pdp import Xray_Cal
 sys.path.append(f'{HOME}/kaggle/data_analysis')
 from model.lightgbm_ex import lightgbm_ex as lgb_ex
 
@@ -49,21 +49,34 @@ try:
 except NameError:
     logger=logger_func()
 
-model_type = 'lgb'
 params = params_elo()[1]
 params['learning_rate'] = learning_rate
+params['objective'] = 'binary'
+
 # Best outlier fit LB3.690
 #  num_leaves = 4
 #  num_leaves = 16
 num_leaves = 31
 num_leaves = 48
-num_leaves = 59
-num_leaves = 61
-num_leaves = 68
-num_leaves = 70
+num_leaves = 57
+#  num_leaves = 59
+#  num_leaves = 61
+#  num_leaves = 68
+#  num_leaves = 70
+#  num_leaves = 71
+try:
+    num_leaves = sys.argv[4]
+except IndexError:
+    num_leaves = 57
+
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
-if num_leaves>=70:
+if num_leaves==71:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.3180226
+    params['min_child_samples'] = 31
+    params['lambda_l2'] = 14
+elif num_leaves==70:
     params['subsample'] = 0.9
     params['colsample_bytree'] = 0.325582
     params['min_child_samples'] = 30
@@ -79,6 +92,12 @@ elif num_leaves>60:
     params['colsample_bytree'] = 0.2792
     params['min_child_samples'] = 59
     params['lambda_l2'] = 2
+
+elif num_leaves==57:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.2513
+    params['min_child_samples'] = 32
+    params['lambda_l2'] = 9
 
 elif num_leaves>50:
     params['subsample'] = 0.9
@@ -97,70 +116,90 @@ else:
     params['colsample_bytree'] = 0.3
     params['min_child_samples'] = 30
 
-
+colsample_bytree = params['colsample_bytree']
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
-
 
 #========================================================================
 # Data Load
 
 win_path = f'../features/4_winner/*.gz'
-win_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
-#  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
-tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
-win_path_list = glob.glob(win_path) + tmp_path_list
-win_path_list = glob.glob(win_path)
+model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz']
 
-col_term = 'hist_regist_term'
-base = utils.read_df_pkl('../input/base_term*')[[key, 'first_active_month', target, col_term]]
+model_path = model_path_list[model_no]
+win_path_list = glob.glob(model_path)
+
+base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
+#  base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month']]
+base[col_term] = base[col_term].map(lambda x:
+                                          24 if 19<=x else
+                                          18 if 16<=x and x<=18 else
+                                          15 if 13<=x and x<=15 else
+                                          12 if 9<=x and x<=12  else
+                                          8 if 6<=x and x<=8    else
+                                          5 if x==5 else
+                                          4
+                                         )
+#  nn_stack_plus = utils.read_pkl_gzip('../ensemble/NN_ensemble/0213_142_elo_NN_stack_E1_row99239_outpart-all_235feat_const1_lr0.001_batch128_epoch30_CV1.2724309982670599.gz')[[key, 'prediction']].set_index(key)
+#  nn_stack_minus = utils.read_pkl_gzip('../ensemble/NN_ensemble/0213_145_elo_NN_stack_E1_row104308_outpart-all_235feat_const1_lr0.001_batch128_epoch30_CV4.864183650939903.gz')[[key, 'prediction']].set_index(key)
+#  base.set_index(key, inplace=True)
+#  base['nn_plus'] = nn_stack_plus['prediction']
+#  base['nn_minus'] = nn_stack_minus['prediction']
+#  base.reset_index(inplace=True)
+
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 
 feature_list = utils.parallel_load_data(path_list=win_path_list)
 
 df_feat = pd.concat(feature_list, axis=1)
+
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
+train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
+y = train[target].values
+#  train[col_term] = train[col_term].map(lambda x: 
+#                                            6 if 6<=x and x<=8  else 
+#                                            9 if 9<=x and x<=12
+#                                            else x
+#                                           )
 #========================================================================
 
 #========================================================================
 # LGBM Setting
 try:
-    seed_list = np.arange(int(sys.argv[2]))
-    seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005]
+    argv3 = int(sys.argv[3])
+    seed_list = np.arange(argv3)
+    if argv3<=10:
+        seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005, 2019][:argv3]
+        seed_list = [328, 605, 1212, 1222, 405, 1128, 1012, 1208, 2005, 2019][:argv3]
 except IndexError:
     seed_list = [1208]
-
-
-train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
-#  train[target] = train[target].map(lambda x: 1 if x>1.5 else 0)
-#  train = pd.read_csv('../features/loy_0_1.csv')
-#  train[target] = train[target].map(lambda x: 1 if x<1 else 0)
-
+    seed_list = [328]
 
 metric = 'auc'
 metric = 'binary_logloss'
 params['objective'] = 'binary'
 params['metric'] = metric
-fold=6
-#  fold_type='stratified'
-fold_type='kfold'
-#  fold_type='self'
 group_col_name=''
 dummie=1
 oof_flg=True
 LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
 
 train, test, drop_list = LGBM.data_check(train=train, test=test, target=target)
-#  if len(drop_list):
-#      train.drop(drop_list, axis=1, inplace=True)
-#      test.drop(drop_list, axis=1, inplace=True)
+if len(drop_list):
+    train.drop(drop_list, axis=1, inplace=True)
+    test.drop(drop_list, axis=1, inplace=True)
 
-train[col_term] = train[col_term].map(lambda x: 
-                                          6 if 6<=x and x<=8  else 
-                                          9 if 9<=x and x<=12
-                                          else x
-                                         )
+
+fold=6
+kfold_path = f'../input/kfold_{valid_type}_all_fold{fold}_seed{fold_seed}.gz'
+if os.path.exists(kfold_path):
+    kfold = utils.read_pkl_gzip(kfold_path)
+    fold_type='self'
+else:
+    fold_type='stratified'
+    kfold = False
+
 #========================================================================
 # seed_avg
 seed_pred = np.zeros(len(test))
@@ -189,6 +228,7 @@ for i, seed in enumerate(seed_list):
         ,num_boost_round=num_boost_round
         ,early_stopping_rounds=early_stopping_rounds
         ,oof_flg=oof_flg
+        ,self_kfold = kfold
     )
 
     seed_pred += LGBM.prediction
@@ -210,8 +250,7 @@ for i, seed in enumerate(seed_list):
 #========================================================================
 test_pred = seed_pred / len(seed_list)
 cv_score = np.mean(cv_list)
-
-cv_feim.to_csv(f'../valid/{start_time[4:12]}_{model_type}_{fname}_feat{feature_num}_binary_CV{cv_score}_lr{learning_rate}.csv', index=False)
+cv_feim.to_csv(f'../valid/{start_time[4:12]}_{model_type}_{stack_name}_feat{feature_num}_binary_CV{cv_score}_lr{learning_rate}.csv', index=False)
 
 #========================================================================
 # STACKING
@@ -219,7 +258,7 @@ cv_feim.to_csv(f'../valid/{start_time[4:12]}_{model_type}_{fname}_feat{feature_n
 if len(stack_name)>0:
     logger.info(f'result_stack shape: {df_pred.shape}')
     if len(seed_list)==1:
-        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_binary_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
+        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_binary_valid-{valid_type}_seed{len(seed_list)}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred.reset_index()[[key, 'prediction']])
     else:
         pred_cols = [col for col in df_pred.columns if col.count('predict')]
         df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
@@ -227,6 +266,6 @@ if len(stack_name)>0:
         drop_cols = [col for col in df_pred.columns if col.count('target_')]
         if len(drop_cols)>0:
             df_pred.drop(drop_cols, axis=1, inplace=True)
-        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{len(seed_list)}seed_{model_type}_binary_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred)
+        utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_binary_valid-{valid_type}_seed{len(seed_list)}_CV{str(cv_score).replace('.', '-')}_{feature_num}features", obj=df_pred.reset_index()[[key, 'pred_mean']])
 
 #========================================================================

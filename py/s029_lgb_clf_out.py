@@ -1,20 +1,13 @@
 fold_seed = 328
-fold_seed = 1208
 outlier_thres = -3
 num_threads = 32
 #  num_threads = 36
 import sys
 import pandas as pd
 
-valid_type = sys.argv[4]
-try:
-    out_part = sys.argv[5]
-except IndexError:
-    out_part = ['all', 'no_out', 'clf_out', 'no_out_flg'][3]
-try:
-    model_no = int(sys.argv[6])
-except IndexError:
-    model_no = 0
+out_part = 'clf_out'
+model_no = int(sys.argv[2])
+valid_type = sys.argv[3]
 
 #========================================================================
 # Args
@@ -24,14 +17,8 @@ target = 'target'
 col_term = 'hist_regist_term'
 no_flg = 'no_out_flg'
 ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term, no_flg, 'clf_pred']
-#  ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term]
 
 stack_name = out_part
-fname=''
-xray=False
-#  xray=True
-submit = pd.read_csv('../input/sample_submission.csv')
-#  submit = []
 
 model_type='lgb'
 try:
@@ -39,7 +26,6 @@ try:
 except ValueError:
     learning_rate = 0.01
 early_stopping_rounds = 200
-#  early_stopping_rounds = 150
 num_boost_round = 15000
 
 import numpy as np
@@ -84,7 +70,7 @@ params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
 
 try:
-    num_leaves = int(sys.argv[7])
+    num_leaves = int(sys.argv[4])
     params['num_leaves'] = num_leaves
 except IndexError:
     pass
@@ -133,12 +119,7 @@ else:
     params['subsample'] = 0.9
     params['colsample_bytree'] = 0.3
     params['min_child_samples'] = 30
-try:
-    colsample_bytree = float(sys.argv[8])
-    params['colsample_bytree'] = colsample_bytree
-except IndexError:
-    colsample_bytree = params['colsample_bytree']
-
+colsample_bytree = params['colsample_bytree']
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 #========================================================================
@@ -152,7 +133,7 @@ model_path = model_path_list[model_no]
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path) + glob.glob(f'../features/5_tmp/*.gz')
 win_path_list = glob.glob(model_path)
-win_path_list = glob.glob(model_path) + glob.glob(win_path)
+#  win_path_list = glob.glob(win_path) + tmp_path_list
 
 base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
 #  base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month']]
@@ -177,28 +158,17 @@ train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)
 test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=True)], axis=1)
 
 self_predict = []
-if out_part=='no_out':
-    # 先に全量をとっておく
-    self_predict = train.copy()
-    train = train[train[target]>-30]
-
-elif out_part=='clf_out':
-
-    self_predict = train.copy()
-
-    # 閾値以上のoutlierのidを除いてTraining
-    tmp1 = train[train['clf_pred']>0.005]
-    tmp1 = tmp1[tmp1[target]<-30]
-    rm_clf_out_id_list = list(tmp1[key].values)
-    #  rm_clf_out_id_list = list(tmp1[key].values) + list(tmp2[key].values)
-    train = train.loc[~train[key].isin(rm_clf_out_id_list), :]
-    train.drop('clf_pred', axis=1, inplace=True)
-
-elif out_part=='no_out_flg':
-    train = train[train['no_out_flg']==1]
-    test = test[test['no_out_flg']==1]
-    train.drop('no_out_flg', axis=1, inplace=True)
-    test.drop('no_out_flg', axis=1, inplace=True)
+self_predict = train.copy()
+# 閾値以上のoutlierのidを除いてTraining
+upper_thres = float(sys.argv[5])
+lower_thres = float(sys.argv[6])
+tmp1 = train[train['clf_pred']>upper_thres]
+tmp2 = train[train['clf_pred']<lower_thres]
+tmp1 = tmp1[tmp1[target]<-30]
+tmp2 = tmp2[tmp2[target]<-30]
+rm_clf_out_id_list = list(tmp1[key].values) + list(tmp2[key].values)
+train = train.loc[~train[key].isin(rm_clf_out_id_list), :]
+train.drop('clf_pred', axis=1, inplace=True)
 
 y = train[target].values
 
@@ -207,7 +177,7 @@ y = train[target].values
 #========================================================================
 # LGBM Setting
 try:
-    argv3 = int(sys.argv[3])
+    argv3 = int(sys.argv[7])
     seed_list = np.arange(argv3)
     if argv3<=10:
         seed_list = [1208, 605, 1212, 1222, 405, 1128, 1012, 328, 2005, 2019][:argv3]
@@ -405,7 +375,7 @@ for i, seed in enumerate(seed_list):
                     valid_dict[fold_num] += val_ids
             print(len(train_dict[fold_num]), len(valid_dict[fold_num]))
         #  kfold = list(zip(train_dict.values(), valid_dict.values()))
-        kfold = [list(train_dict.values()), list(valid_dict.values())]
+        kfold = [train_dict.values(), valid_dict.values()]
 
     elif valid_type=='ods':
         train['rounded_target'] = train['target'].round(0)
@@ -417,7 +387,7 @@ for i, seed in enumerate(seed_list):
         for k,v in vc.items():
             step = train.shape[0]/v
             indent = train.shape[0]/(v+1)
-            df2 = train[train['rounded_target'] == k].sample(v, random_state=fold_seed).reset_index(drop=True)
+            df2 = train[train['rounded_target'] == k].sample(v, random_state=120).reset_index(drop=True)
             for j in range(0, v):
                 df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
             df = pd.concat([df2,df])
@@ -700,7 +670,7 @@ cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rat
 # Submission
 test_pred = seed_pred / len(seed_list)
 submit[target] = test_pred
-submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
+submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_obj{objective}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
 submit.to_csv(submit_path, index=False)
 #========================================================================
 
