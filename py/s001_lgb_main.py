@@ -1,5 +1,5 @@
 fold_seed = 328
-fold_seed = 1208
+#  fold_seed = 1208
 outlier_thres = -3
 num_threads = 32
 #  num_threads = 36
@@ -148,14 +148,19 @@ win_path = f'../features/4_winner/*.gz'
 #  win_path = f'../features/1_first_valid/*.gz'
 model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz']
 model_path = model_path_list[model_no]
-#  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
+tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
-#  win_path_list = glob.glob(model_path) + glob.glob(win_path) + glob.glob(f'../features/5_tmp/*.gz')
-win_path_list = glob.glob(model_path)
-win_path_list = glob.glob(model_path) + glob.glob(win_path)
+win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
+#  win_path_list = glob.glob(model_path)
+#  win_path_list = glob.glob(model_path) + glob.glob(win_path)
+#  win_path_list = glob.glob(win_path)
 
 base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
-#  base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month']]
+
+#  tmp = utils.read_pkl_gzip('../ensemble/NN_ensemble/0217_014_elo_NN_stack_E1_row201917_outpart-all_235feat_const1_lr0.001_batch128_epoch30_CV521.7766296857341.gz').set_index(key)['prediction']
+#  base['nn_pred'] = tmp
+#  base.reset_index(inplace=True)
+
 base[col_term] = base[col_term].map(lambda x:
                                           24 if 19<=x else
                                           18 if 16<=x and x<=18 else
@@ -170,7 +175,6 @@ base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 
 feature_list = utils.parallel_load_data(path_list=win_path_list)
-
 df_feat = pd.concat(feature_list, axis=1)
 
 train = pd.concat([base_train, df_feat.iloc[:len(base_train), :]], axis=1)

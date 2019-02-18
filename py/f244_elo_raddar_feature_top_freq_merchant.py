@@ -57,6 +57,7 @@ def get_new_columns(name,aggs):
 #========================================================================
 
 
+debug = [True, False][0]
 #========================================================================
 # Merchant id 別の集計
 # month_lagで集計する（purchase_dateは別にやる）
@@ -64,15 +65,18 @@ def get_new_columns(name,aggs):
 
 def raddar_top_freq_merchant_agg(df, agg_term, new_max, new_min, old_max, old_min):
     #========================================================================
-#     new_max, new_min, old_max, old_min = 0,0,-1,-1
+    if debug:
+        df = auth1.head(100000)
+#     new_max, new_min, old_max, old_min = 0,-1,-2,-3
+#     agg_term = -20
     # Args Setting
     level = [key, 'merchant_id', 'month_lag']
     # merchantの利用頻度を集計する期間を絞る（month_lagの値）
-    agg_term = agg_term
     new_month_lag_max = new_max
     new_month_lag_min = new_min
     old_month_lag_max = old_max
     old_month_lag_min = old_min
+    agg_term = agg_term
     #========================================================================
     
     #========================================================================
@@ -113,24 +117,28 @@ def raddar_top_freq_merchant_agg(df, agg_term, new_max, new_min, old_max, old_mi
             aggs[col] = ['mean']
         else:
             aggs[col] = ['sum']
-
+            
     # 複数month_lagをもつデータの場合は、集計する
     if new_term>0:
-        new.groupby([key, 'merchant_id'])[feat_cols]
+        new = new.groupby([key, 'merchant_id'])[feat_cols].agg(aggs)
+        new_cols = get_new_columns(name='', aggs=aggs)
+        new.columns = new_cols
     else:
         new.set_index([key, 'merchant_id'], inplace=True)
-
+    
     if old_term>0:
-        old.groupby([key, 'merchant_id'])[feat_cols]
+        old = old.groupby([key, 'merchant_id'])[feat_cols].agg(aggs)
+        new_cols = get_new_columns(name='', aggs=aggs)
+        old.columns = new_cols
     else:
         old.set_index([key, 'merchant_id'], inplace=True)
     #========================================================================
-
+        
+    new.reset_index(inplace=True)
+    old.reset_index(inplace=True)
     #========================================================================
     # oldに存在するがnewにいないcard_id, merchantをnewにもたせる。
     print("Get Lost Merchant and Card ID")
-    new.reset_index(inplace=True)
-    old.reset_index(inplace=True)
     new['flg'] = 1
     tmp_cols = [key, 'merchant_id']
     old_lost = old[tmp_cols].merge(new[tmp_cols + ['flg']], how='left', on=[key, 'merchant_id'])
@@ -143,6 +151,7 @@ def raddar_top_freq_merchant_agg(df, agg_term, new_max, new_min, old_max, old_mi
     #========================================================================
     # Make Ratio Feature
     print("Make Ratio Feature")
+    feat_cols = [col for col in new.columns if col.count('amount') or col.count('install')]
     fname = f'flag{new_month_lag_max}_{new_month_lag_min}-plag{old_month_lag_max}_{old_month_lag_min}'
     new = new.merge(old, how='left', on=[key, 'merchant_id'])
     for col in feat_cols:
@@ -153,28 +162,31 @@ def raddar_top_freq_merchant_agg(df, agg_term, new_max, new_min, old_max, old_mi
     #========================================================================
     # card_id * merchant_id別のtop frequency ranking
     # all term version
-    df_term = df_hist[df_hist['month_lag']>=agg_term]
+    if debug:
+        df = df.head(1000000)
+    df_term = df[df['month_lag']>=agg_term]
     mer_cnt = df_term.groupby([key, 'merchant_id'])['month_lag'].nunique().reset_index().rename(columns={'month_lag':'month_lag_cnt'})
     mer_cnt.sort_values(by=[key, 'month_lag_cnt'], ascending=False, inplace=True)
     mer_cnt = utils.row_number(df=mer_cnt, level=key)
     mer_cnt.set_index([key, 'merchant_id'], inplace=True)
     
     df_merchant = new.set_index(tmp_cols).join(mer_cnt).reset_index()
+    
     del new, old, mer_cnt
     gc.collect()
     
     use_cols = [key, 'merchant_id'] + [col for col in df_merchant.columns if col.count('flag')] + ['month_lag_cnt', 'row_no']
     df_merchant = df_merchant[use_cols]
     #========================================================================
-
-
+    
+    
     #========================================================================
     # merchant_id別に集計を行ったら、
     # 1. それらを更に集計する. frequencyが高いmerchantのみで集計するパターンも作る
     # 2. frequencyの高いmerchnatでまとめてtop1~10カラムを作る ------->>> frequencyについては、全体と直近半年の両パターンでカウントし、特徴を作る
     #========================================================================
-
-    feat_cols = [col for col in df_merchant.columns if col.count('flag')]
+    
+    feat_cols = [col for col in df_merchant.columns if col.count('plag')]
     
     #========================================================================
     # Top10のfrequency merchantをまとめてカラムにする
@@ -202,7 +214,7 @@ def raddar_top_freq_merchant_agg(df, agg_term, new_max, new_min, old_max, old_mi
     del df_merchant
     gc.collect()
     
-    elo_save_feature(df_feat=base, prefix=prefix)
+    # elo_save_feature(df_feat=base, prefix=prefix)
     print('Complete!')
     #========================================================================
 

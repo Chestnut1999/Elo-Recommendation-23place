@@ -65,7 +65,7 @@ num_leaves = 57
 #  num_leaves = 70
 #  num_leaves = 71
 try:
-    num_leaves = sys.argv[4]
+    num_leaves = int(sys.argv[4])
 except IndexError:
     num_leaves = 57
 
@@ -126,7 +126,9 @@ win_path = f'../features/4_winner/*.gz'
 model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz']
 
 model_path = model_path_list[model_no]
+
 win_path_list = glob.glob(model_path)
+#  win_path_list = glob.glob(model_path) + glob.glob(win_path) + glob.glob('../features/5_tmp/*.gz')
 
 base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
 #  base = utils.read_df_pkl('../input/base_term*')[[key, target, col_term, 'first_active_month']]
@@ -177,7 +179,7 @@ except IndexError:
     seed_list = [328]
 
 metric = 'auc'
-metric = 'binary_logloss'
+#  metric = 'binary_logloss'
 params['objective'] = 'binary'
 params['metric'] = metric
 group_col_name=''

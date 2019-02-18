@@ -57,7 +57,7 @@ base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 
 win_path_list = glob.glob(win_path) + tmp_path_list
-win_path_list = glob.glob(model_path) + glob.glob(win_path)
+win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
 feature_list = utils.parallel_load_data(path_list=win_path_list)
 
 df_feat = pd.concat(feature_list, axis=1)
