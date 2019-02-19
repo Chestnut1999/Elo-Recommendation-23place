@@ -77,9 +77,10 @@ num_leaves = 48
 num_leaves = 57
 #  num_leaves = 59
 #  num_leaves = 61
+num_leaves = 65
 #  num_leaves = 68
 num_leaves = 70
-#  num_leaves = 71
+num_leaves = 71
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
 
@@ -99,11 +100,18 @@ elif num_leaves==70:
     params['colsample_bytree'] = 0.325582
     params['min_child_samples'] = 30
     params['lambda_l2'] = 7
+
 elif num_leaves>65:
     params['subsample'] = 0.9
     params['colsample_bytree'] = 0.2755158
     params['min_child_samples'] = 37
     params['lambda_l2'] = 7
+
+elif num_leaves==65:
+    params['subsample'] = 0.9
+    params['colsample_bytree'] = 0.3293367
+    params['min_child_samples'] = 32
+    params['lambda_l2'] = 15
 
 elif num_leaves>60:
     params['subsample'] = 0.9
@@ -269,6 +277,8 @@ for i, seed in enumerate(seed_list):
     # 1. マイナスでOutlierの閾値を切って、それらの分布が揃う様にKFoldを作る
     kfold_path = f'../input/kfold_{valid_type}_{out_part}_fold{fold}_seed{fold_seed}.gz'
     if os.path.exists(kfold_path) and out_part!='clf_out':
+        #  kfold = utils.read_pkl_gzip(kfold_path)
+        kfold_path = f'../input/kfold_ods_equal_seed328.gz'
         kfold = utils.read_pkl_gzip(kfold_path)
 
     # 2. プラスマイナスでOutlierの閾値を切って、プラス、マイナス別に分布が揃う様にKFoldを作る
