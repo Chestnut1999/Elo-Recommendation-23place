@@ -71,16 +71,16 @@ params['learning_rate'] = learning_rate
 
 # Best outlier fit LB3.690
 #  num_leaves = 4
-#  num_leaves = 16
+num_leaves = 16
 num_leaves = 31
 num_leaves = 48
-num_leaves = 57
+#  num_leaves = 57
 #  num_leaves = 59
 #  num_leaves = 61
-num_leaves = 65
+#  num_leaves = 65
 #  num_leaves = 68
 num_leaves = 70
-num_leaves = 71
+#  num_leaves = 71
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
 
@@ -147,6 +147,39 @@ try:
 except IndexError:
     colsample_bytree = params['colsample_bytree']
 
+#  params = {
+#      #'gpu_use_dp': False, 
+#      #'gpu_platform_id': 0, 
+#      #'gpu_device_id': 0, 
+#      #'device': 'gpu', 
+#      'objective': 'regression_l2', 
+#      'boosting_type': 'gbdt', 
+#      'max_depth': 7, 
+#      'n_estimators': 2000, 
+#      'subsample_freq': 2, 
+#      'subsample_for_bin': 200000, 
+#      'min_data_per_group': 100, 
+#      'max_cat_to_onehot': 4, 
+#      'cat_l2': 10.0, 
+#      'cat_smooth': 10.0, 
+#      'max_cat_threshold': 32, 
+#      'metric_freq': 10, 
+#      'verbosity': -1, 
+#      'metric': 'rmse', 
+#      'colsample_bytree': 0.5, 
+#      #  'learning_rate': 0.0061033234451294376, 
+#      'learning_rate': 0.01,
+#      'min_child_samples': 80, 
+#      'min_child_weight': 100.0, 
+#      'min_split_gain': 1e-06, 
+#      'num_leaves': 47, 
+#      'reg_alpha': 10.0, 
+#      'reg_lambda': 10.0, 
+#      'subsample': 0.9}
+#  num_leaves = params['num_leaves']
+#  colsample_bytree = params['colsample_bytree']
+
+
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 #========================================================================
@@ -154,14 +187,14 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 win_path = f'../features/4_winner/*.gz'
 #  win_path = f'../features/1_first_valid/*.gz'
-model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz']
+model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz', '../model/LB3669LB_70leaves/*.gz']
 model_path = model_path_list[model_no]
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
-win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
-#  win_path_list = glob.glob(model_path)
+#  win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(model_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path)
-#  win_path_list = glob.glob(win_path)
+#  win_path_list = glob.glob(win_path) + tmp_path_list
 
 base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
 
@@ -576,6 +609,7 @@ for i, seed in enumerate(seed_list):
 # Result
 cv_score = np.mean(cv_list)
 iter_avg = np.int(np.mean(iter_list))
+valid_type = 'ods_equal'
 #========================================================================
 
 logger.info(f'''
