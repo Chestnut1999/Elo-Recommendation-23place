@@ -21,6 +21,7 @@ ensemble/
 other/
 .git/
 
+*.json
 *.git
 *.yaml
 *.config
