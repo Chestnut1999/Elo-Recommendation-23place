@@ -191,10 +191,10 @@ model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lif
 model_path = model_path_list[model_no]
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
-#  win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
-win_path_list = glob.glob(model_path) + tmp_path_list
+win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
+#  win_path_list = glob.glob(model_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path)
-#  win_path_list = glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(win_path) + tmp_path_list
 
 base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
 

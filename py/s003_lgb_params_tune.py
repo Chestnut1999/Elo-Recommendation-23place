@@ -50,6 +50,7 @@ start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 win_path = f'../features/4_winner/*.gz'
 model_path = f'../model/LB3670_70leaves_colsam0322/*.gz'
+model_path = f'../model/LB3669LB_70leaves/*.gz'
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 
 base = utils.read_df_pkl('../input/base_first*')
@@ -57,7 +58,8 @@ base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
 
 win_path_list = glob.glob(win_path) + tmp_path_list
-win_path_list = glob.glob(model_path) + glob.glob(win_path)
+#  win_path_list = glob.glob(model_path) + glob.glob(win_path)
+#  win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
 feature_list = utils.parallel_load_data(path_list=win_path_list)
 
 df_feat = pd.concat(feature_list, axis=1)
@@ -145,7 +147,8 @@ def objective(trial):
     lambda_l2 = trial.suggest_int('lambda_l2', 3.0, 15.0)
 
     params = {
-        'num_threads': -1,
+        #  'num_threads': -1,
+        'num_threads': 32,
         'num_leaves': num_leaves,
         'objective':'regression',
         "boosting": "gbdt",
