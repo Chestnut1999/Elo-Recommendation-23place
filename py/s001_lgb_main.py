@@ -10,7 +10,7 @@ valid_type = sys.argv[4]
 try:
     out_part = sys.argv[5]
 except IndexError:
-    out_part = ['all', 'no_out', 'clf_out', 'no_out_flg'][3]
+    out_part = ['all', 'no_out', 'clf_out', 'no_out_flg', 'clf'][0]
 try:
     model_no = int(sys.argv[6])
 except IndexError:
@@ -49,6 +49,8 @@ import re
 import gc
 import os
 from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import StratifiedKFold, KFold
+
 HOME = os.path.expanduser('~')
 
 sys.path.append(f'{HOME}/kaggle/data_analysis/model')
@@ -74,12 +76,12 @@ params['learning_rate'] = learning_rate
 num_leaves = 16
 num_leaves = 31
 num_leaves = 48
-#  num_leaves = 57
+num_leaves = 57
 #  num_leaves = 59
 #  num_leaves = 61
 #  num_leaves = 65
 #  num_leaves = 68
-num_leaves = 70
+#  num_leaves = 70
 #  num_leaves = 71
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
@@ -192,9 +194,10 @@ model_path = model_path_list[model_no]
 tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
 #  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
 win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
-#  win_path_list = glob.glob(model_path) + tmp_path_list
+win_path_list = glob.glob(model_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path)
-win_path_list = glob.glob(win_path) + tmp_path_list
+#  win_path_list = glob.glob(win_path) + tmp_path_list
+#  win_path_list = glob.glob(model_path)
 
 base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
 
@@ -224,8 +227,11 @@ test = pd.concat([base_test, df_feat.iloc[len(base_train):, :].reset_index(drop=
 self_predict = []
 if out_part=='no_out':
     # 先に全量をとっておく
-    self_predict = train.copy()
+    #  self_predict = train.copy()
     train = train[train[target]>-30]
+
+elif out_part=='clf':
+    train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
 
 elif out_part=='clf_out':
 
@@ -261,7 +267,6 @@ except IndexError:
     seed_list = [1208]
     seed_list = [328]
 metric = 'rmse'
-#  metric = 'mse'
 params['metric'] = metric
 fold=6
 fold_type='self'
@@ -269,17 +274,22 @@ fold_type='self'
 group_col_name=''
 dummie=1
 oof_flg=True
-LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
 
+if out_part=='clf':
+    metric = 'auc'
+    params['metric'] = metric
+    params['objective'] = 'binary'
+
+#========================================================================
+# Cleansing
+LGBM = lgb_ex(logger=logger, metric=metric, model_type=model_type, ignore_list=ignore_list)
 train, test, drop_list = LGBM.data_check(train=train, test=test, target=target, encode='label')
 if len(drop_list):
     train.drop(drop_list, axis=1, inplace=True)
     test.drop(drop_list, axis=1, inplace=True)
     if len(self_predict)>0:
         self_predict.drop(drop_list, axis=1, inplace=True)
-
-from sklearn.model_selection import StratifiedKFold, KFold
-
+#========================================================================
 
 # seed_avg
 seed_pred = np.zeros(len(test))
@@ -309,9 +319,12 @@ for i, seed in enumerate(seed_list):
     # Validation Set はFitさせたいFirst month のグループに絞る
     # 1. マイナスでOutlierの閾値を切って、それらの分布が揃う様にKFoldを作る
     kfold_path = f'../input/kfold_{valid_type}_{out_part}_fold{fold}_seed{fold_seed}.gz'
-    if os.path.exists(kfold_path) and out_part!='clf_out':
+    if (os.path.exists(kfold_path) and out_part!='clf_out') or out_part=='clf':
         #  kfold = utils.read_pkl_gzip(kfold_path)
         kfold_path = f'../input/kfold_ods_equal_seed328.gz'
+        kfold = utils.read_pkl_gzip(kfold_path)
+    elif out_part!='clf_out':
+        kfold_path = f'../input/kfold_{valid_type}_{out_part}_fold{fold}_seed{fold_seed}.gz'
         kfold = utils.read_pkl_gzip(kfold_path)
 
     # 2. プラスマイナスでOutlierの閾値を切って、プラス、マイナス別に分布が揃う様にKFoldを作る
@@ -618,23 +631,32 @@ logger.info(f'''
 #========================================================================''')
 
 #========================================================================
-# STACKING
+# Save STACKING
 if len(stack_name)>0:
     logger.info(f'result_stack shape: {df_pred.shape}')
     if len(seed_list)>1:
         pred_cols = [col for col in df_pred.columns if col.count('predict')]
         df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
         df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
-# Save
 out_score = 0
 pred_col = [col for col in df_pred.columns if col.count('pred')][0]
 utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_out_part-{out_part}_valid-{valid_type}_foldseed{fold_seed}_ESET{model_no}_row{len(train)}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_colsample{colsample_bytree}_iter{iter_avg}_OUT0_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred[[key, pred_col]])
 #========================================================================
+# Save Importance
+# 不要なカラムを削除
+drop_feim_cols = [col for col in cv_feim.columns if col.count('importance_') or col.count('rank_')]
+cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
+drop_feim_cols = [col for col in cv_feim.columns if col.count('importance') and not(col.count('avg'))]
+cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
+cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
+
+if out_part=='clf':
+    sys.exit()
 
 #========================================================================
 # Part of card_id Score
 #  bench = pd.read_csv('../input/bench_LB3684_FAM_cv_score.csv')
-bench = utils.read_pkl_gzip('../stack/0206_125_stack_lgb_lr0.01_235feats_10seed_70leaves_iter1164_OUT29.8269_CV3-6215750935280235_LB.gz')[[key, 'pred_mean']].rename(columns={'pred_mean':'bench_pred'})
+bench = utils.read_pkl_gzip('../ensemble/lgb_ensemble/0206_125_stack_lgb_lr0.01_235feats_10seed_70leaves_iter1164_OUT29.8269_CV3-6215750935280235_LB.gz')[[key, 'pred_mean']].rename(columns={'pred_mean':'bench_pred'})
 df_pred = df_pred.merge(bench, on=key, how='inner')
 part_score_list = []
 part_N_list = []
@@ -737,12 +759,6 @@ if len(train)>150000:
 else:
     out_score = 0
 
-# 不要なカラムを削除
-drop_feim_cols = [col for col in cv_feim.columns if col.count('importance_') or col.count('rank_')]
-cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
-drop_feim_cols = [col for col in cv_feim.columns if col.count('importance') and not(col.count('avg'))]
-cv_feim.drop(drop_feim_cols, axis=1, inplace=True)
-cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv' , index=False)
 
 #========================================================================
 # Submission
