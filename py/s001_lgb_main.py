@@ -196,7 +196,7 @@ tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0
 win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
 win_path_list = glob.glob(model_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path)
-#  win_path_list = glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(win_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path)
 
 base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
@@ -639,7 +639,11 @@ if len(stack_name)>0:
         df_pred['pred_mean'] = df_pred[pred_cols].mean(axis=1)
         df_pred['pred_std'] = df_pred[pred_cols].std(axis=1)
 out_score = 0
-pred_col = [col for col in df_pred.columns if col.count('pred')][0]
+if 'pred_mean' in df_pred.columns:
+    pred_col = 'pred_mean'
+else:
+    pred_col = 'prediction'
+
 utils.to_pkl_gzip(path=f"../stack/{start_time[4:12]}_{stack_name}_{model_type}_out_part-{out_part}_valid-{valid_type}_foldseed{fold_seed}_ESET{model_no}_row{len(train)}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_colsample{colsample_bytree}_iter{iter_avg}_OUT0_CV{str(cv_score).replace('.', '-')}_LB", obj=df_pred[[key, pred_col]])
 #========================================================================
 # Save Importance
