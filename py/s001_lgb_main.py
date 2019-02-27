@@ -4,7 +4,9 @@ outlier_thres = -3
 num_threads = 32
 #  num_threads = 36
 import sys
+import glob
 import pandas as pd
+from tqdm import tqdm
 
 valid_type = sys.argv[4]
 try:
@@ -17,14 +19,30 @@ except IndexError:
     model_no = 0
 
 #========================================================================
-# Args
+# Path List 
+win_path = f'../features/4_winner/*.gz'
+#  win_path = f'../features/1_first_valid/*.gz'
+model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz', '../model/LB3669LB_70leaves/*.gz', '../model/LB3667_single_70leaves/*.gz']
+model_path = model_path_list[model_no]
+tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
+#  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
+win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
+#  win_path_list = glob.glob(model_path) + tmp_path_list
+#  win_path_list = glob.glob(model_path) + glob.glob(win_path)
+#  win_path_list = glob.glob(win_path) + tmp_path_list
+#  win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(model_path)
 #========================================================================
+
+#========================================================================
+# Args
 key = 'card_id'
 target = 'target'
 col_term = 'hist_regist_term'
 no_flg = 'no_out_flg'
-ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term, no_flg, 'clf_pred']
+ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term, no_flg, 'clf_pred', 'group']
 #  ignore_list = [key, target, 'merchant_id', 'first_active_month', 'index', 'personal_term', col_term]
+#========================================================================
 
 stack_name = out_part
 fname=''
@@ -44,7 +62,6 @@ num_boost_round = 15000
 
 import numpy as np
 import datetime
-import glob
 import re
 import gc
 import os
@@ -81,7 +98,7 @@ num_leaves = 57
 #  num_leaves = 61
 #  num_leaves = 65
 #  num_leaves = 68
-#  num_leaves = 70
+num_leaves = 70
 #  num_leaves = 71
 params['num_leaves'] = num_leaves
 params['num_threads'] = num_threads
@@ -149,71 +166,21 @@ try:
 except IndexError:
     colsample_bytree = params['colsample_bytree']
 
-#  params = {
-#      #'gpu_use_dp': False, 
-#      #'gpu_platform_id': 0, 
-#      #'gpu_device_id': 0, 
-#      #'device': 'gpu', 
-#      'objective': 'regression_l2', 
-#      'boosting_type': 'gbdt', 
-#      'max_depth': 7, 
-#      'n_estimators': 2000, 
-#      'subsample_freq': 2, 
-#      'subsample_for_bin': 200000, 
-#      'min_data_per_group': 100, 
-#      'max_cat_to_onehot': 4, 
-#      'cat_l2': 10.0, 
-#      'cat_smooth': 10.0, 
-#      'max_cat_threshold': 32, 
-#      'metric_freq': 10, 
-#      'verbosity': -1, 
-#      'metric': 'rmse', 
-#      'colsample_bytree': 0.5, 
-#      #  'learning_rate': 0.0061033234451294376, 
-#      'learning_rate': 0.01,
-#      'min_child_samples': 80, 
-#      'min_child_weight': 100.0, 
-#      'min_split_gain': 1e-06, 
-#      'num_leaves': 47, 
-#      'reg_alpha': 10.0, 
-#      'reg_lambda': 10.0, 
-#      'subsample': 0.9}
-#  num_leaves = params['num_leaves']
-#  colsample_bytree = params['colsample_bytree']
-
-
 start_time = "{0:%Y%m%d_%H%M%S}".format(datetime.datetime.now())
 
 #========================================================================
 # Data Load
 
-win_path = f'../features/4_winner/*.gz'
-#  win_path = f'../features/1_first_valid/*.gz'
-model_path_list = [f'../model/LB3670_70leaves_colsam0322/*.gz', '../model/E2_lift_set/*.gz', '../model/E3_PCA_set/*.gz', '../model/E4_mix_set/*.gz', '../model/LB3669LB_70leaves/*.gz']
-model_path = model_path_list[model_no]
-tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0_exp/*.gz')
-#  tmp_path_list = glob.glob(f'../features/5_tmp/*.gz')
-win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
-win_path_list = glob.glob(model_path) + tmp_path_list
-#  win_path_list = glob.glob(model_path) + glob.glob(win_path)
-win_path_list = glob.glob(win_path) + tmp_path_list
-#  win_path_list = glob.glob(model_path)
+base = utils.read_pkl_gzip('../input/base_type_group.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred', 'group']]
+gr_col = 'group'
 
-base = utils.read_pkl_gzip('../input/base_no_out_clf.gz')[[key, target, col_term, 'first_active_month', no_flg, 'clf_pred']]
-
-#  tmp = utils.read_pkl_gzip('../ensemble/NN_ensemble/0217_014_elo_NN_stack_E1_row201917_outpart-all_235feat_const1_lr0.001_batch128_epoch30_CV521.7766296857341.gz').set_index(key)['prediction']
-#  base['nn_pred'] = tmp
+#  tmp = utils.read_pkl_gzip('../stack/0223_222_stack_future_amount_pred_fold4_leaves16_AUC_CV0.2999066985403468.gz').set_index(key)
+#  tmp2 = utils.read_pkl_gzip('../stack/0223_222_stack_future_amount_pred_fold4_leaves16_CV1897.3342481032632.gz').set_index(key)
+#  base.set_index(key, inplace=True)
+#  base['1_pred'] = tmp['prediction']
+#  amount_pred_cols = [col for col in tmp2.columns if col.count('pred')]
+#  base[amount_pred_cols] = tmp2[amount_pred_cols]
 #  base.reset_index(inplace=True)
-
-base[col_term] = base[col_term].map(lambda x:
-                                          24 if 19<=x else
-                                          18 if 16<=x and x<=18 else
-                                          15 if 13<=x and x<=15 else
-                                          12 if 9<=x and x<=12  else
-                                          8 if 6<=x and x<=8    else
-                                          5 if x==5 else
-                                          4
-                                         )
 
 base_train = base[~base[target].isnull()].reset_index(drop=True)
 base_test = base[base[target].isnull()].reset_index(drop=True)
@@ -230,8 +197,12 @@ if out_part=='no_out':
     #  self_predict = train.copy()
     train = train[train[target]>-30]
 
+elif out_part=='group':
+    train = train[train['group']=='type0_flg0_higher']
+
 elif out_part=='clf':
     train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
+    #  train[target] = train[target].map(lambda x: 1 if x<0 else 0)
 
 elif out_part=='clf_out':
 
@@ -279,6 +250,18 @@ if out_part=='clf':
     metric = 'auc'
     params['metric'] = metric
     params['objective'] = 'binary'
+elif out_part=='rank':
+    metric = 'ndcg'
+    params['metric'] = metric
+    #  params['query'] = -1
+    params['group_column'] = f"name:rank"
+    #  params['group_column'] = "rank"
+    params['task'] = 'train'
+    objective = 'lambdarank'
+    params['objective'] = objective
+    params['ndcg_eval_at'] = [1,2,3]  # for lambdarank
+    #  max_position = 3000
+    #  params['max_position']: max_position,  # for lambdarank
 
 #========================================================================
 # Cleansing
@@ -298,6 +281,31 @@ iter_list = []
 model_list = []
 train.reset_index(inplace=True, drop=True)
 test.reset_index(inplace=True , drop=True)
+
+
+# @@@ raw_target
+#  train[target] = 2**train[target]
+if out_part=='rank':
+    train.sort_values(by=target, ascending=True, inplace=True)
+    first_rank = 1
+    current_rank = 0
+    before_target = -100
+    rank_list = []
+    for rank, val in enumerate(tqdm(train[target].values)):
+        if first_rank:
+            rank_list.append(1)
+            first_rank = 0
+            current_rank = 1
+            before_target = val
+        elif before_target==val:
+            rank_list.append(current_rank)
+        else:
+            if current_rank<30:
+                current_rank += 1
+            rank_list.append(current_rank)
+    train["rank"] = rank_list
+
+
 for i, seed in enumerate(seed_list):
 
     if key not in train.columns:
@@ -319,11 +327,11 @@ for i, seed in enumerate(seed_list):
     # Validation Set はFitさせたいFirst month のグループに絞る
     # 1. マイナスでOutlierの閾値を切って、それらの分布が揃う様にKFoldを作る
     kfold_path = f'../input/kfold_{valid_type}_{out_part}_fold{fold}_seed{fold_seed}.gz'
-    if (os.path.exists(kfold_path) and out_part!='clf_out') or out_part=='clf':
+    if (os.path.exists(kfold_path) and out_part!='clf_out') or out_part=='clf' or out_part=='group' or out_part=='rank':
         #  kfold = utils.read_pkl_gzip(kfold_path)
         kfold_path = f'../input/kfold_ods_equal_seed328.gz'
         kfold = utils.read_pkl_gzip(kfold_path)
-    elif out_part!='clf_out':
+    elif out_part=='ods':
         kfold_path = f'../input/kfold_{valid_type}_{out_part}_fold{fold}_seed{fold_seed}.gz'
         kfold = utils.read_pkl_gzip(kfold_path)
 
@@ -467,7 +475,7 @@ for i, seed in enumerate(seed_list):
         #  kfold = list(zip(train_dict.values(), valid_dict.values()))
         kfold = [list(train_dict.values()), list(valid_dict.values())]
 
-    elif valid_type=='ods':
+    elif valid_type=='ods_':
         train['rounded_target'] = train['target'].round(0)
         train = train.sort_values('rounded_target').reset_index(drop=True)
         vc = train['rounded_target'].value_counts()
@@ -498,77 +506,12 @@ for i, seed in enumerate(seed_list):
             val_list.append(val_ids)
         kfold = [trn_list, val_list]
 
-    elif valid_type=='ods_term':
+    elif valid_type=='ods_seed':
+        lazy_target = base[base['clf_pred']<0.01]
+        eazy_target = base[base['clf_pred']>=0.01]
+        valid_list = [lazy_target, eazy_target]
 
-        outlier_thres = -3
-        term4  = train[train[col_term] == 4]
-        term5  = train[train[col_term] == 5]
-        term6  = train[train[col_term] == 6]
-        term9  = train[train[col_term] == 9]
-        term15  = train[train[col_term] == 15]
-        term18  = train[train[col_term] == 18]
-        term24  = train[train[col_term] == 24]
-
-        df_list = [
-        term4
-        ,term5
-        ,term6
-        ,term9
-        ,term15
-        ,term18
-        ,term24
-        ]
-
-
-        fold_type = 'self'
-        trn_idx_list = []
-        val_idx_list = []
-        train_dict = {}
-        valid_dict = {}
-
-        for df_term in df_list:
-
-            df_term['rounded_target'] = df_term['target'].round(0)
-            df_term = df_term.sort_values('rounded_target').reset_index(drop=True)
-            vc = df_term['rounded_target'].value_counts()
-            vc = dict(sorted(vc.items()))
-            df = pd.DataFrame()
-            df_term['indexcol'],idx = 0,1
-            for k,v in vc.items():
-                step = df_term.shape[0]/v
-                indent = df_term.shape[0]/(v+1)
-                df2 = df_term[df_term['rounded_target'] == k].sample(v, random_state=fold_seed).reset_index(drop=True)
-                for j in range(0, v):
-                    df2.at[j, 'indexcol'] = indent + j*step + 0.000001*idx
-                df = pd.concat([df2,df])
-                idx+=1
-            df_term = df.sort_values('indexcol', ascending=True).reset_index(drop=True)
-            del df_term['indexcol'], df_term['rounded_target']
-            folds = KFold(n_splits=fold, shuffle=False, random_state=fold_seed)
-            kfold = folds.split(df_term, df_term[target].values)
-
-            for fold_num, (p_trn_idx, p_val_idx) in enumerate(kfold):
-
-                def get_ids(df, idx):
-                    ids = list(df.iloc[idx, :][key].values)
-                    return ids
-
-                trn_ids = get_ids(df_term, p_trn_idx)
-                val_ids = get_ids(df_term, p_val_idx)
-
-                # idをindexの番号にする
-                #  trn_ids = list(train[train[key].isin(trn_ids)].index)
-                #  val_ids = list(train[train[key].isin(val_ids)].index)
-
-                if fold_num not in train_dict:
-                    train_dict[fold_num] = trn_ids
-                    valid_dict[fold_num] = val_ids
-                else:
-                    train_dict[fold_num] += trn_ids
-                    valid_dict[fold_num] += val_ids
-            print(len(np.unique(train_dict[fold_num])), len(np.unique(valid_dict[fold_num])))
-        kfold = list(zip(train_dict.values(), valid_dict.values()))
-
+        kfold = utils.get_kfold(valid_list=valid_list, fold_seed=seed)
 
     # 3. Default KFold
     else:

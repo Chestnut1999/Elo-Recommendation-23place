@@ -52,6 +52,7 @@ def to_win_dir_Nfeatures(path='../features/1_first_valid/*.gz', N=100):
             shutil.move('train_'+path, '../features/9_delete')
             shutil.move('test_'+path, '../features/9_delete')
 
+
 def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
     logger = logger_func()
     if len(best_select)==0:
@@ -75,14 +76,17 @@ def move_to_second_valid(best_select=[], path='', rank=0, key_list=[]):
         if len(best_feature)==0:
             sys.exit()
 
-        tmp_list = glob.glob('../features/4_winner/*')
-        path_list = []
-
-        for path in tmp_list:
-            path_list.append(path)
+        path_list = glob.glob('../features/4_winner/*')
 
         for feature in best_feature:
-            move_path = [path for path in path_list if path.count(feature) and path.count(feature) and feature not in ignore_list]
+            move_path = []
+            for path in path_list:
+                filename = re.search(r'/([^/.]*).gz', path).group(1)
+                #  if path.count(feature) and feature not in ignore_list:
+                if feature==filename:
+                    #  print(f"{filename} | {feature}")
+                    move_path.append(path)
+
             for move in move_path:
                 try:
                     shutil.move(move, second_path)
