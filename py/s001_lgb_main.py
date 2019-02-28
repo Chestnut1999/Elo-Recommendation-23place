@@ -1,8 +1,9 @@
+go_submit = True
 fold_seed = 328
 #  fold_seed = 1208
 outlier_thres = -3
 num_threads = 32
-#  num_threads = 36
+num_threads = 36
 import sys
 import glob
 import pandas as pd
@@ -29,7 +30,7 @@ tmp_path_list = glob.glob(f'../features/5_tmp/*.gz') + glob.glob(f'../features/0
 win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path)
-#  win_path_list = glob.glob(win_path) + tmp_path_list
+win_path_list = glob.glob(win_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
 win_path_list = glob.glob(model_path)
 #========================================================================
@@ -52,10 +53,10 @@ submit = pd.read_csv('../input/sample_submission.csv')
 #  submit = []
 
 model_type='lgb'
-try:
-    learning_rate = float(sys.argv[1])
-except ValueError:
-    learning_rate = 0.01
+#  try:
+#      learning_rate = float(sys.argv[1])
+#  except ValueError:
+learning_rate = 0.01
 early_stopping_rounds = 200
 #  early_stopping_rounds = 150
 num_boost_round = 15000
@@ -600,111 +601,114 @@ cv_feim.to_csv( f'../valid/{start_time[4:12]}_valid_{model_type}_lr{learning_rat
 if out_part=='clf':
     sys.exit()
 
-#========================================================================
-# Part of card_id Score
-#  bench = pd.read_csv('../input/bench_LB3684_FAM_cv_score.csv')
-bench = utils.read_pkl_gzip('../ensemble/lgb_ensemble/0206_125_stack_lgb_lr0.01_235feats_10seed_70leaves_iter1164_OUT29.8269_CV3-6215750935280235_LB.gz')[[key, 'pred_mean']].rename(columns={'pred_mean':'bench_pred'})
-df_pred = df_pred.merge(bench, on=key, how='inner')
-part_score_list = []
-part_N_list = []
-fam_list = []
-base_train['first_active_month'] = base_train['first_active_month'].map(lambda x: str(x)[:7])
 
-for i in range(201501, 201713, 1):
-    fam = str(i)[:4] + '-' + str(i)[-2:]
-    df_part = base_train[base_train['first_active_month']==fam]
-    if len(df_part)<1:
-        continue
-    part_id_list = df_part[key].values
+if False:
 
-    part_train = df_pred.loc[df_pred[key].isin(part_id_list), :]
-
-    y_train = part_train[target].values
-    if 'pred_mean' in list(part_train.columns):
-        y_pred = part_train['pred_mean'].values
-    else:
-        y_pred = part_train['prediction'].values
-    bench_pred = part_train['bench_pred'].values
-
-    # RMSE
-    part_score = np.sqrt(mean_squared_error(y_train, y_pred))
-    bench_score = np.sqrt(mean_squared_error(y_train, bench_pred))
-    part_score -= bench_score
-
-    fam_list.append(fam)
-    part_score_list.append(part_score)
-    part_N_list.append(len(part_id_list))
-
-#  for i, part_score, N in zip(fam_list, part_score_list, part_N_list):
-df = pd.DataFrame(np.asarray([fam_list, part_score_list, part_N_list]).T)
-df.columns = ['FAM', 'CV', 'N']
-
-# FAM: {i} | CV: {part_score} | N: {len(part_id_list)}
-pd.set_option('max_rows', 200)
-logger.info(f'''
-#========================================================================
-# {df}
-#========================================================================''')
-#========================================================================
-
-#========================================================================
-# Term
-part_score_list = []
-part_N_list = []
-fam_list = []
-term_list = sorted(list(base_train['hist_regist_term'].value_counts().index))
-for term in term_list:
-    df_part = base_train[base_train['hist_regist_term']==term]
-    if len(df_part)<1:
-        continue
-    part_id_list = df_part[key].values
-
-    part_train = df_pred.loc[df_pred[key].isin(part_id_list), :]
-
-    y_train = part_train[target].values
-    if 'pred_mean' in list(part_train.columns):
-        y_pred = part_train['pred_mean'].values
-    else:
-        y_pred = part_train['prediction'].values
-    bench_pred = part_train['bench_pred'].values
-
-    # RMSE
-    part_score = np.sqrt(mean_squared_error(y_train, y_pred))
-    bench_score = np.sqrt(mean_squared_error(y_train, bench_pred))
-    part_score -= bench_score
-
-    fam_list.append(term)
-    part_score_list.append(part_score)
-    part_N_list.append(len(part_id_list))
-
-#  for i, part_score, N in zip(fam_list, part_score_list, part_N_list):
-df = pd.DataFrame(np.asarray([fam_list, part_score_list, part_N_list]).T)
-df.columns = ['TERM', 'CV', 'N']
-
-# FAM: {i} | CV: {part_score} | N: {len(part_id_list)}
-pd.set_option('max_rows', 200)
-logger.info(f'''
-#========================================================================
-# {df}
-#========================================================================''')
-#========================================================================
-
-
-if len(train)>150000:
-    if len(train[train[target]<-30])>0:
-        # outlierに対するスコアを出す
-        train.reset_index(inplace=True)
-        out_ids = train.loc[train.target<-30, key].values
-        out_val = train.loc[train.target<-30, target].values
-        if len(seed_list)==1:
-            out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+    #========================================================================
+    # Part of card_id Score
+    #  bench = pd.read_csv('../input/bench_LB3684_FAM_cv_score.csv')
+    bench = utils.read_pkl_gzip('../ensemble/lgb_ensemble/0206_125_stack_lgb_lr0.01_235feats_10seed_70leaves_iter1164_OUT29.8269_CV3-6215750935280235_LB.gz')[[key, 'pred_mean']].rename(columns={'pred_mean':'bench_pred'})
+    df_pred = df_pred.merge(bench, on=key, how='inner')
+    part_score_list = []
+    part_N_list = []
+    fam_list = []
+    base_train['first_active_month'] = base_train['first_active_month'].map(lambda x: str(x)[:7])
+    
+    for i in range(201501, 201713, 1):
+        fam = str(i)[:4] + '-' + str(i)[-2:]
+        df_part = base_train[base_train['first_active_month']==fam]
+        if len(df_part)<1:
+            continue
+        part_id_list = df_part[key].values
+    
+        part_train = df_pred.loc[df_pred[key].isin(part_id_list), :]
+    
+        y_train = part_train[target].values
+        if 'pred_mean' in list(part_train.columns):
+            y_pred = part_train['pred_mean'].values
         else:
-            out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
-        out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+            y_pred = part_train['prediction'].values
+        bench_pred = part_train['bench_pred'].values
+    
+        # RMSE
+        part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+        bench_score = np.sqrt(mean_squared_error(y_train, bench_pred))
+        part_score -= bench_score
+    
+        fam_list.append(fam)
+        part_score_list.append(part_score)
+        part_N_list.append(len(part_id_list))
+    
+    #  for i, part_score, N in zip(fam_list, part_score_list, part_N_list):
+    df = pd.DataFrame(np.asarray([fam_list, part_score_list, part_N_list]).T)
+    df.columns = ['FAM', 'CV', 'N']
+    
+    # FAM: {i} | CV: {part_score} | N: {len(part_id_list)}
+    pd.set_option('max_rows', 200)
+    logger.info(f'''
+    #========================================================================
+    # {df}
+    #========================================================================''')
+    #========================================================================
+    
+    #========================================================================
+    # Term
+    part_score_list = []
+    part_N_list = []
+    fam_list = []
+    term_list = sorted(list(base_train['hist_regist_term'].value_counts().index))
+    for term in term_list:
+        df_part = base_train[base_train['hist_regist_term']==term]
+        if len(df_part)<1:
+            continue
+        part_id_list = df_part[key].values
+    
+        part_train = df_pred.loc[df_pred[key].isin(part_id_list), :]
+    
+        y_train = part_train[target].values
+        if 'pred_mean' in list(part_train.columns):
+            y_pred = part_train['pred_mean'].values
+        else:
+            y_pred = part_train['prediction'].values
+        bench_pred = part_train['bench_pred'].values
+    
+        # RMSE
+        part_score = np.sqrt(mean_squared_error(y_train, y_pred))
+        bench_score = np.sqrt(mean_squared_error(y_train, bench_pred))
+        part_score -= bench_score
+    
+        fam_list.append(term)
+        part_score_list.append(part_score)
+        part_N_list.append(len(part_id_list))
+    
+    #  for i, part_score, N in zip(fam_list, part_score_list, part_N_list):
+    df = pd.DataFrame(np.asarray([fam_list, part_score_list, part_N_list]).T)
+    df.columns = ['TERM', 'CV', 'N']
+    
+    # FAM: {i} | CV: {part_score} | N: {len(part_id_list)}
+    pd.set_option('max_rows', 200)
+    logger.info(f'''
+    #========================================================================
+    # {df}
+    #========================================================================''')
+    #========================================================================
+
+
+    if len(train)>150000:
+        if len(train[train[target]<-30])>0:
+            # outlierに対するスコアを出す
+            train.reset_index(inplace=True)
+            out_ids = train.loc[train.target<-30, key].values
+            out_val = train.loc[train.target<-30, target].values
+            if len(seed_list)==1:
+                out_pred = df_pred[df_pred[key].isin(out_ids)]['prediction'].values
+            else:
+                out_pred = df_pred[df_pred[key].isin(out_ids)]['pred_mean'].values
+            out_score = np.sqrt(mean_squared_error(out_val, out_pred))
+        else:
+            out_score = 0
     else:
         out_score = 0
-else:
-    out_score = 0
 
 
 #========================================================================
@@ -713,28 +717,18 @@ test_pred = seed_pred / len(seed_list)
 submit[target] = test_pred
 submit_path = f'../submit/{start_time[4:12]}_submit_{model_type}_lr{learning_rate}_{feature_num}feats_{len(seed_list)}seed_{num_leaves}leaves_iter{iter_avg}_OUT{str(out_score)[:7]}_CV{cv_score}_LB.csv'
 submit.to_csv(submit_path, index=False)
-#========================================================================
 
-#========================================================================
-# Corr
-#  base = utils.read_df_pkl('../input/base_term*')[[key, target]].set_index(key)
-#  ens_list = glob.glob('../ensemble/*.gz')
+if go_submit:
+    import shutil
+    comment = sys.argv[1]
+    if len(comment):
+        try:
+            lb_pb = utils.submit(file_path=submit_path, comment=comment)
+        except IndexError:
+            lb_pb = utils.submit(file_path=submit_path)
 
-#  if 'pred_mean' in df_pred.columns:
-#      base['this_pred'] = df_pred.set_index(key)['pred_mean']
-#  else:
-#      base['this_pred'] = df_pred.set_index(key)['prediction']
+        shutil.move(submit, '../log_submit/')
 
-#  # 相関
-#  for i, path in enumerate(ens_list):
-#      ens_model = utils.read_pkl_gzip(path)
-#      if 'pred_mean' in ens_model.columns:
-#          pred_col = 'pred_mean'
-#      else:
-#          pred_col = 'prediction'
-#      ens_model = ens_model[[key, pred_col]].set_index(key)
-#      base['ens_pred'] = ens_model[pred_col]
-#      cv_score = re.search(r'CV([^/.]*)_LB.gz', path).group(1)
-#      corr = np.corrcoef(base['ens_pred'], base['this_pred'].values).min()
-#      logger.info(f"WITH CV{cv_score[:6]} CORR: {corr}")
-#========================================================================
+    submit_path = submit_path.replace('LB', f'LB{lb_pb[0]}')
+    submit.to_csv(submit_path, index=False)
+    #========================================================================
