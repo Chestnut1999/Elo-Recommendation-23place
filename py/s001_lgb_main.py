@@ -13,7 +13,7 @@ valid_type = sys.argv[4]
 try:
     out_part = sys.argv[5]
 except IndexError:
-    out_part = ['all', 'no_out', 'clf_out', 'no_out_flg', 'clf'][0]
+    out_part = ['all', 'no_out', 'clf_upper', 'clf_lower', 'clf'][0]
 try:
     model_no = int(sys.argv[6])
 except IndexError:
@@ -32,7 +32,7 @@ win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path)
 win_path_list = glob.glob(win_path) + tmp_path_list
 #  win_path_list = glob.glob(model_path) + glob.glob(win_path) + tmp_path_list
-win_path_list = glob.glob(model_path)
+#  win_path_list = glob.glob(model_path)
 #========================================================================
 
 #========================================================================
@@ -198,8 +198,11 @@ if out_part=='no_out':
     #  self_predict = train.copy()
     train = train[train[target]>-30]
 
-elif out_part=='group':
-    train = train[train['group']=='type0_flg0_higher']
+elif out_part=='clf_upper':
+    train = train[train['clf_pred']>0.01]
+
+elif out_part=='clf_lower':
+    train = train[train['clf_pred']<=0.01]
 
 elif out_part=='clf':
     train[target] = train[target].map(lambda x: 1 if x<-30 else 0)
@@ -332,151 +335,13 @@ for i, seed in enumerate(seed_list):
         #  kfold = utils.read_pkl_gzip(kfold_path)
         kfold_path = f'../input/kfold_ods_equal_seed328.gz'
         kfold = utils.read_pkl_gzip(kfold_path)
+
     elif out_part=='ods':
         kfold_path = f'../input/kfold_{valid_type}_{out_part}_fold{fold}_seed{fold_seed}.gz'
         kfold = utils.read_pkl_gzip(kfold_path)
 
-    # 2. プラスマイナスでOutlierの閾値を切って、プラス、マイナス別に分布が揃う様にKFoldを作る
-    elif valid_type=='pmo':
-        plus  = train[train[target] >= 0]
-        tmp_minus = train[train[target] <  0]
-        minus = tmp_minus[tmp_minus[target] >  -30]
-        out = tmp_minus[tmp_minus[target] <  -30]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-        out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=fold_seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-        kfold_out = folds.split(out, out['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx), (o_trn_idx, o_val_idx) in zip(kfold_plus, kfold_minus, kfold_out):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx) + get_ids(out, o_trn_idx)
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
-
-            # idをindexの番号にする
-            #  trn_ids = list(train[train[key].isin(trn_ids)].index)
-            #  val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-        kfold = [trn_idx_list, val_idx_list]
-
-    elif valid_type=='pm':
-        plus  = train[train[target] >= 0]
-        minus = train[train[target] <  0]
-        #  minus = tmp_minus[tmp_minus[target] >  -30]
-
-        plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-        minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=fold_seed)
-        kfold_plus = folds.split(plus, plus['outliers'].values)
-        kfold_minus = folds.split(minus, minus['outliers'].values)
-
-        trn_idx_list = []
-        val_idx_list = []
-        for (p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx) in zip(kfold_plus, kfold_minus):
-
-            def get_ids(df, idx):
-                ids = list(df.iloc[idx, :][key].values)
-                return ids
-
-            trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx)
-            val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
-
-            # idをindexの番号にする
-            #  trn_ids = list(train[train[key].isin(trn_ids)].index)
-            #  val_ids = list(train[train[key].isin(val_ids)].index)
-
-            trn_idx_list.append(trn_ids)
-            val_idx_list.append(val_ids)
-        # card_id ver
-        kfold = [trn_idx_list, val_idx_list]
-
-    elif valid_type=='out':
-
-        train['outliers'] = train[target].map(lambda x: 1 if x<-30 else 0)
-        folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=fold_seed)
-        kfold = list(folds.split(train,train['outliers'].values))
-        train.drop('outliers', axis=1, inplace=True)
-
-        # card_id listにする
-        trn_list = []
-        val_list = []
-        for trn, val in kfold:
-            trn_ids = train.iloc[trn][key].values
-            val_ids = train.iloc[val][key].values
-            trn_list.append(trn_ids)
-            val_list.append(val_ids)
-        kfold = [trn_list, val_list]
-
-    elif valid_type=='term':
-        outlier_thres = -3
-
-        term_list = list(train[col_term].value_counts().index)
-
-        trn_idx_list = []
-        val_idx_list = []
-        train_dict = {}
-        valid_dict = {}
-        for term in term_list:
-            df  = train[train[col_term] == term]
-
-            plus  = df[df[target] >= 0]
-            tmp_minus = df[df[target] <  0]
-            minus = tmp_minus[tmp_minus[target] >  -30]
-            out = tmp_minus[tmp_minus[target] <  -30]
-
-            plus['outliers'] = plus[target].map(lambda x: 1 if x>=outlier_thres*-1 else 0)
-            minus['outliers'] = minus[target].map(lambda x: 1 if x<=outlier_thres else 0)
-            out['outliers'] = out[target].map(lambda x: 1 if x<=outlier_thres else 0)
-
-            folds = StratifiedKFold(n_splits=fold, shuffle=True, random_state=fold_seed)
-            kfold_plus = folds.split(plus, plus['outliers'].values)
-            kfold_minus = folds.split(minus, minus['outliers'].values)
-            if len(out):
-                kfold_out = folds.split(out, out['outliers'].values)
-            else:
-                kfold_out = zip(range(fold), range(fold))
-
-            for fold_num, ((p_trn_idx, p_val_idx), (m_trn_idx, m_val_idx), (o_trn_idx, o_val_idx)) in enumerate(zip(kfold_plus, kfold_minus, kfold_out)):
-
-                def get_ids(df, idx):
-                    ids = list(df.iloc[idx, :][key].values)
-                    return ids
-
-                if len(out):
-                    trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx) + get_ids(out, o_trn_idx)
-                    val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx) + get_ids(out, o_val_idx)
-                else:
-                    trn_ids = get_ids(plus, p_trn_idx) + get_ids(minus, m_trn_idx)
-                    val_ids = get_ids(plus, p_val_idx) + get_ids(minus, m_val_idx)
-
-                # idをindexの番号にする
-                #  trn_ids = list(df[df[key].isin(trn_ids)].index)
-                #  val_ids = list(df[df[key].isin(val_ids)].index)
-
-                if fold_num not in train_dict:
-                    train_dict[fold_num] = trn_ids
-                    valid_dict[fold_num] = val_ids
-                else:
-                    train_dict[fold_num] += trn_ids
-                    valid_dict[fold_num] += val_ids
-            print(len(train_dict[fold_num]), len(valid_dict[fold_num]))
-        #  kfold = list(zip(train_dict.values(), valid_dict.values()))
-        kfold = [list(train_dict.values()), list(valid_dict.values())]
-
-    elif valid_type=='ods_':
+    #  elif valid_type=='ods_':
+    else:
         train['rounded_target'] = train['target'].round(0)
         train = train.sort_values('rounded_target').reset_index(drop=True)
         vc = train['rounded_target'].value_counts()
@@ -507,17 +372,9 @@ for i, seed in enumerate(seed_list):
             val_list.append(val_ids)
         kfold = [trn_list, val_list]
 
-    elif valid_type=='ods_seed':
-        lazy_target = base[base['clf_pred']<0.01]
-        eazy_target = base[base['clf_pred']>=0.01]
-        valid_list = [lazy_target, eazy_target]
-
-        kfold = utils.get_kfold(valid_list=valid_list, fold_seed=seed)
-
-    # 3. Default KFold
-    else:
-        kfold = False
-        fold_type = 'kfold'
+    #  else:
+    #      kfold = False
+    #      fold_type = 'kfold'
     #========================================================================
     if not(os.path.exists(kfold_path)):
         utils.to_pkl_gzip(obj=kfold, path=kfold_path)

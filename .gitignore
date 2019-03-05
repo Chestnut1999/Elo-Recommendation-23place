@@ -4,9 +4,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-season1_features/
-season2_features/
-season3_features/
 model/
 input/
 output/
